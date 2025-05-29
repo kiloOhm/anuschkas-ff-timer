@@ -21,8 +21,8 @@ import { effect, ref } from 'vue';
       settings: {
         name: "Team 1",
         offset: 10,
-        onTime: 20 * 60,
-        offTime: 10 * 60,
+        onTime:  60,
+        offTime: 30,
         rounds: 4,
         voice: "M1",
       }
@@ -31,9 +31,9 @@ import { effect, ref } from 'vue';
       id: crypto.randomUUID(),
       settings: {
         name: "Team 2",
-        offset: 10 + (10 * 60),
-        onTime: 20 * 60,
-        offTime: 10 * 60,
+        offset: 40,
+        onTime: 60,
+        offTime: 30,
         rounds: 4,
         voice: "F1",
       }
