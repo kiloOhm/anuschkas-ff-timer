@@ -1,0 +1,12 @@
+@import "tailwindcss";
+
+@font-face {
+  font-family: 'ClockFont';
+  src: url('/Segment7-4Gml.otf') format('opentype');
+  font-weight: normal;
+  font-style: normal;
+}
+
+.clock {
+  font-family: 'ClockFont', monospace;
+}
