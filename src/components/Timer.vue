@@ -1,6 +1,6 @@
 <script lang="ts" setup>
   import { useThemeVars } from 'naive-ui';
-  import { computed, ref, watch } from 'vue';
+  import { computed, effect, nextTick, ref, watch } from 'vue';
   import { formatTime, useGlobalTime } from '../util/time';
   import { useSound, type CueKey, type VoiceKey } from '../util/sound';
   import { executeWithMinDuration } from '../util/js';
@@ -22,12 +22,15 @@
   });
 
   const { injectGlobalTimeRefs } = useGlobalTime();
-  const { time } = injectGlobalTimeRefs();
+  const { time, ticking } = injectGlobalTimeRefs();
 
   const { play } = useSound()
 
-  function cue(phrase: CueKey) {
-    return play(settings.value.voice, phrase);
+  async function cue(phrase: CueKey) {
+    if(!ticking.value) {
+      return;
+    }
+    return await play(settings.value.voice, phrase);
   }
 
   const state = computed<{
@@ -76,23 +79,19 @@
   watch(state, async (newState, oldState) => {
     if (newState.state === "on" && oldState?.state === "off") {
       command.value = "Lift!";
-      showCommand.value = true;
       await executeWithMinDuration(async () => {
         await cue("Lift");
       }, 2000)
-      showCommand.value = false;
     } else if (newState.state === "off" && oldState?.state === "on") {
       command.value = "Rest!";
-      showCommand.value = true;
       await executeWithMinDuration(async () => {
         await cue("Rest");
       }, 2000)
-      showCommand.value = false;
     }
   }, { immediate: true });
 
   watch(() => state.value.remainingSeconds, (v) => {
-    if ([3, 2, 1].includes(v)) {
+    if ([3, 2, 1].includes(v) && state.value.state === "off") {
       cue(String(v) as CueKey);
     }
   });
@@ -101,8 +100,15 @@
   const formattedTimeInPhase = computed(() => formatTime(state.value.timeInPhase));
 
   const showSettings = ref(false);
-  const showCommand = ref(false);
+  const showCommand = ref(true);
   const command = ref<string | null>(null);
+  effect(() => {
+    if(time.value < settings.value.offset) {
+      showCommand.value = false;
+    } else {
+      showCommand.value = true;
+    }
+  })
 </script>
 
 <template>
@@ -128,7 +134,7 @@
           borderRadius: themeVars.borderRadius
         }">{{ state.currentRound }}</span>
         <span class="block" :style="{
-          width: hours > 0 ? '7ch' : '4.5ch',
+          width: hours > 0 ? '8ch' : '5.5ch',
           color: state.state === 'on' ? themeVars.successColor : themeVars.errorColor,
         }">
           {{ formattedTimeInPhase }}

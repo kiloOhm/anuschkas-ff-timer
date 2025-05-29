@@ -31,7 +31,7 @@ import { effect, ref } from 'vue';
       id: crypto.randomUUID(),
       settings: {
         name: "Team 2",
-        offset: 40,
+        offset: 110,
         onTime: 60,
         offTime: 30,
         rounds: 4,
@@ -90,7 +90,7 @@ import { effect, ref } from 'vue';
         <n-card class="rounded-none! border-t-0! border-l-0! border-r-0!">
           <div class="flex items-center justify-between">
             <div class="flex items-center">
-              <div @click="toggle" class="w-[16ch] flex items-center cursor-pointer">
+              <div @click="toggle" class="w-[18ch] flex items-center cursor-pointer">
                 <n-icon size="3em" :color="ticking ? themeVars.successColor : themeVars.errorColor">
                   <i-iconoir-play-solid v-if="ticking"/>
                   <i-iconoir-pause-solid v-else/>

@@ -15,42 +15,45 @@ function generateVoiceCueTimeline(timers: TimerSettings[]): VoiceCueEvent[] {
     const { offset, onTime, offTime, rounds, voice } = settings;
     const cycleTime = onTime + offTime;
 
-    // ✅ Add countdown at the end of offset
+    // ✅ Countdown before first Lift (after offset)
     for (let i = 3; i >= 1; i--) {
-      events.push({
-        time: offset - i,
-        cue: `${i}` as CueKey,
-        voice
-      });
+      const t = offset - i;
+      if (t >= 0) {
+        events.push({
+          time: t,
+          cue: `${i}` as CueKey,
+          voice,
+        });
+      }
     }
 
     for (let round = 0; round < rounds; round++) {
-      const base = offset + round * cycleTime;
+      const liftStart = offset + round * cycleTime;
+      const restStart = liftStart + onTime;
 
-      // "Lift" and countdown at the end of on phase
-      events.push({ time: base, cue: "Lift", voice });
-      for (let i = 3; i >= 1; i--) {
-        events.push({
-          time: base + onTime - i,
-          cue: `${i}` as CueKey,
-          voice
-        });
-      }
+      // ✅ Lift cue
+      events.push({ time: liftStart, cue: "Lift", voice });
 
-      // "Rest" and countdown at the end of off phase
-      events.push({ time: base + onTime, cue: "Rest", voice });
-      for (let i = 3; i >= 1; i--) {
-        events.push({
-          time: base + onTime + offTime - i,
-          cue: `${i}` as CueKey,
-          voice
-        });
+      // ✅ Rest cue
+      events.push({ time: restStart, cue: "Rest", voice });
+
+      // ✅ Countdown before next Lift (unless it's the final round)
+      const isNotLastRound = round < rounds - 1;
+      if (isNotLastRound) {
+        const nextLift = liftStart + cycleTime;
+        for (let i = 3; i >= 1; i--) {
+          events.push({
+            time: nextLift - i,
+            cue: `${i}` as CueKey,
+            voice,
+          });
+        }
       }
     }
   }
 
   return events
-    .filter(e => e.time >= 0) // remove any pre-0 cues (if offset < 3)
+    .filter(e => e.time >= 0)
     .sort((a, b) => a.time - b.time);
 }
 
