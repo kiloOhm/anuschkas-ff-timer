@@ -1,10 +1,9 @@
 <script lang="ts" setup>
   import { useThemeVars } from 'naive-ui';
-  import { computed, effect, ref, toRefs, watch } from 'vue';
+  import { computed, ref, watch } from 'vue';
   import { formatTime, useGlobalTime } from '../util/time';
   import { useSound, type CueKey, type VoiceKey } from '../util/sound';
-import { executeWithMinDuration } from '../util/js';
-import { set } from '@vueuse/core';
+  import { executeWithMinDuration } from '../util/js';
 
   export type TimerSettings = {
     name: string;
