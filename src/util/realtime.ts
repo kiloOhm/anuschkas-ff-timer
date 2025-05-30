@@ -6,6 +6,7 @@ import type { KeyedTimerSettings } from "./time";
 let lastSyncMsg: SyncMsg | null = null;
 
 export type SyncMsg = {
+    from: AppMode;
     timestamp: number;
     config?: KeyedTimerSettings[];
     state?: {

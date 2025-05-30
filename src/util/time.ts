@@ -41,6 +41,7 @@ const timers = useLocalStorage<KeyedTimerSettings[]>("timers", [
 watch([timers, isLeadTimer], debounce(([newTimers, newIsLead]) => {
   if (newIsLead && newTimers !== undefined) {
     publishSync({
+      from: clientMode.value!,
       timestamp: lastState.value.timestamp ?? Date.now(),
       config: newTimers,
       state: {
@@ -77,6 +78,7 @@ const globalTimeTicking = ref(false);
 watch([globalTimeTicking, lastState, isLeadTimer, isRemote], ([newTicking, newLastState, newIsLead, isRemote]) => {
   if (!newIsLead && !isRemote) return;
   publishSync({
+    from: clientMode.value!,
     timestamp: newLastState.timestamp,
     state: {
       ticking: newTicking,
@@ -143,7 +145,9 @@ let initialized = false;
 function init() {
   if (initialized) return;
   subscribeSync((msg) => {
-    if (isLeadTimer.value) return;
+    if (isLeadTimer.value) {
+      if (msg.from !== 'remote') return;
+    }
     if (timers && msg.config) {
       timers.value = msg.config;
     }
