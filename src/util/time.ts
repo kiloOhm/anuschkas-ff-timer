@@ -146,7 +146,8 @@ function init() {
   if (initialized) return;
   subscribeSync((msg) => {
     if (isLeadTimer.value) {
-      if (msg.from !== 'remote') return;
+      // if (msg.from !== 'remote') return;
+      return;
     }
     if (timers && msg.config) {
       timers.value = msg.config;
