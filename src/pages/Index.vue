@@ -18,7 +18,7 @@ const toggleTheme = () => {
 
 const themeVars = useThemeVars();
 
-const { toggle, reset, isLeadTimer, timers, globalTime, formattedTime, globalTimeTicking } = useGlobalTime();
+const { toggle, reset, isLeadTimer, timers, formattedTime, globalTimeTicking } = useGlobalTime();
 
 function removeTimer(id: string) {
   const index = timers.value.findIndex(timer => timer.id === id);

@@ -1,8 +1,8 @@
 import { useLocalStorage } from "@vueuse/core";
-import { computed, readonly, ref, watch } from "vue";
+import { computed, effect, readonly, ref, watch } from "vue";
 import type { TimerSettings } from "../components/Timer.vue";
 import { useRealtime } from "./realtime";
-import { debounce } from "lodash";
+import { debounce, last } from "lodash";
 
 const { subscribeSync, publishSync, clientMode } = useRealtime();
 
@@ -40,8 +40,12 @@ const timers = useLocalStorage<KeyedTimerSettings[]>("timers", [
 watch([timers, isLeadTimer], debounce(([newTimers, newIsLead]) => {
   if (newIsLead && newTimers !== undefined) {
     publishSync({
-      timestamp: Date.now(),
+      timestamp: lastState.value.timestamp ?? Date.now(),
       config: newTimers,
+      state: {
+        ticking: globalTimeTicking.value,
+        time: globalTime.value,
+      }
     })
   }
 }, 1000), { immediate: true, deep: true });
@@ -69,7 +73,8 @@ const globalTime = computed({
 })
 const globalTimeTicking = ref(false);
 
-watch([globalTimeTicking, lastState], ([newTicking, newLastState]) => {
+watch([globalTimeTicking, lastState, isLeadTimer], ([newTicking, newLastState, newIsLead]) => {
+  if (!newIsLead) return;
   publishSync({
     timestamp: newLastState.timestamp,
     state: {
@@ -77,7 +82,7 @@ watch([globalTimeTicking, lastState], ([newTicking, newLastState]) => {
       time: newLastState.time,
     }
   })
-}, { immediate: true });
+}, { immediate: true, deep: true });
 
 const formattedTime = computed(() => formatTime(globalTime.value, true));
 
@@ -112,9 +117,16 @@ function pause(dontSetLastState = false) {
   }
 }
 
-function reset() {
-  globalTime.value = 0;
+function reset(dontSetLastState = false) {
   pause();
+  globalTime.value = 0;
+    if (!dontSetLastState) {
+    console.log("reset timer, setting last state", lastState.value);
+    lastState.value = {
+      timestamp: Date.now(),
+      time: globalTime.value,
+    };
+  }
 }
 
 function toggle() {
@@ -130,7 +142,7 @@ let initialized = false;
 function init() {
   if (initialized) return;
   subscribeSync((msg) => {
-    if (isLeadTimer.value) return; // Ignore messages if I'm the lead timer
+    if (isLeadTimer.value) return;
     if (timers && msg.config) {
       timers.value = msg.config;
     }
@@ -140,6 +152,7 @@ function init() {
         time: msg.state.time,
       }
       globalTimeTicking.value = msg.state.ticking;
+      globalTime.value = msg.state.time;
       if (msg.state.ticking) {
         resume(true);
       } else {

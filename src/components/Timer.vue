@@ -38,19 +38,20 @@ const state = computed<{
   currentRound: number;
   remainingSeconds: number;
 }>(() => {
+  const time = Math.floor(globalTime.value / 1000);
   const cycleTime = settings.value.onTime + settings.value.offTime;
   const totalTime = settings.value.offset + settings.value.rounds * cycleTime;
 
-  if (globalTime.value < settings.value.offset) {
+  if (time < settings.value.offset) {
     return {
       state: "off",
-      timeInPhase: globalTime.value,
+      timeInPhase: time,
       currentRound: 0,
-      remainingSeconds: Math.ceil(settings.value.offset - globalTime.value),
+      remainingSeconds: Math.ceil(settings.value.offset - time),
     };
   }
 
-  if (globalTime.value >= totalTime) {
+  if (time >= totalTime) {
     return {
       state: "off",
       timeInPhase: 0,
@@ -59,7 +60,7 @@ const state = computed<{
     };
   }
 
-  const timeSinceOffset = globalTime.value - settings.value.offset;
+  const timeSinceOffset = time - settings.value.offset;
   const cycleIndex = Math.floor(timeSinceOffset / cycleTime); // 0-based
   const timeInCycle = timeSinceOffset % cycleTime;
 
@@ -96,13 +97,13 @@ watch(() => state.value.remainingSeconds, (v) => {
 });
 
 const hours = computed(() => Math.floor(state.value.timeInPhase / 3600));
-const formattedTimeInPhase = computed(() => formatTime(state.value.timeInPhase));
+const formattedTimeInPhase = computed(() => formatTime(state.value.timeInPhase * 1000));
 
 const showSettings = ref(false);
 const showCommand = ref(true);
 const command = ref<string | null>(null);
 effect(() => {
-  if (globalTime.value < settings.value.offset) {
+  if (Math.floor(globalTime.value / 1000) < settings.value.offset) {
     showCommand.value = false;
   } else {
     showCommand.value = true;
@@ -112,7 +113,7 @@ effect(() => {
 
 <template>
   <n-card hoverable>
-    <div @click="showSettings = !showSettings" class=" cursor-pointer Timer flex justify-between gap-8">
+    <div @click="showSettings = !showSettings" class=" cursor-pointer Timer flex justify-between flex-wrap gap-8">
       <div class="flex flex-col justify-between">
         <h2 class="text-4xl font-bold">
           {{ settings.name }}
@@ -127,7 +128,7 @@ effect(() => {
           {{ command }}
         </span>
       </div>
-      <div class="flex items-center gap-8 text-9xl font-extrabold">
+      <div class="flex items-center flex-wrap gap-8 text-9xl font-extrabold">
         <span class="border-4 px-8 font-mono" :style="{
           borderColor: themeVars.textColor1,
           borderRadius: themeVars.borderRadius
