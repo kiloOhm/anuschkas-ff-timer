@@ -1,8 +1,8 @@
 import { useLocalStorage } from "@vueuse/core";
-import { computed, effect, readonly, ref, watch } from "vue";
+import { computed, readonly, ref, watch } from "vue";
 import type { TimerSettings } from "../components/Timer.vue";
 import { useRealtime } from "./realtime";
-import { debounce, last } from "lodash";
+import { debounce } from "lodash";
 
 const { subscribeSync, publishSync, clientMode } = useRealtime();
 

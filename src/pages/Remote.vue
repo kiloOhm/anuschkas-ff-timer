@@ -8,15 +8,14 @@
 
     const { } = useRealtime(sessionId, true);
 
-    const { toggle, reset, injectGlobalTimeRefs } = useGlobalTime();
-    const { formattedTime, ticking } = injectGlobalTimeRefs();
+    const { toggle, reset, formattedTime, globalTimeTicking } = useGlobalTime();
 </script>
 
 <template>
     <div class="Remote h-screen w-screen relative! bg-black text-white grid place-content-center gap-24">
             <div @click="toggle" class="w-[18ch] flex flex-col items-center cursor-pointer">
-                <n-icon size="8em" :color="ticking ? 'green' : 'red'">
-                    <i-iconoir-play-solid v-if="ticking"/>
+                <n-icon size="8em" :color="globalTimeTicking ? 'green' : 'red'">
+                    <i-iconoir-play-solid v-if="globalTimeTicking"/>
                     <i-iconoir-pause-solid v-else/>
                 </n-icon>
                 <span class="text-4xl font-bold">{{ formattedTime }}</span>
