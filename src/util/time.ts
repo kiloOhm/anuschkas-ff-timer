@@ -7,6 +7,7 @@ import { debounce } from "lodash";
 const { subscribeSync, publishSync, clientMode } = useRealtime();
 
 const isLeadTimer = computed(() => clientMode.value === 'leadtimer');
+const isRemote = computed(() => clientMode.value === 'remote');
 
 let globalTimeInterval: any = null;
 
@@ -73,8 +74,8 @@ const globalTime = computed({
 })
 const globalTimeTicking = ref(false);
 
-watch([globalTimeTicking, lastState, isLeadTimer], ([newTicking, newLastState, newIsLead]) => {
-  if (!newIsLead) return;
+watch([globalTimeTicking, lastState, isLeadTimer, isRemote], ([newTicking, newLastState, newIsLead, isRemote]) => {
+  if (!newIsLead && !isRemote) return;
   publishSync({
     timestamp: newLastState.timestamp,
     state: {
