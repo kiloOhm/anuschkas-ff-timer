@@ -13,9 +13,11 @@
     "@tailwindcss/vite": "^4.1.8",
     "@types/howler": "^2.2.12",
     "@vueuse/core": "^13.3.0",
+    "ably": "^2.9.0",
     "howler": "^2.2.4",
     "tailwindcss": "^4.1.8",
-    "vue": "^3.5.13"
+    "vue": "^3.5.13",
+    "vue-router": "4"
   },
   "devDependencies": {
     "@iconify-json/iconoir": "^1.2.7",

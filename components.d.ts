@@ -8,16 +8,13 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
-    Clock: typeof import('./src/components/Clock.vue')['default']
     IIconoirDownload: typeof import('~icons/iconoir/download')['default']
     IIconoirHalfMoon: typeof import('~icons/iconoir/half-moon')['default']
     IIconoirMinus: typeof import('~icons/iconoir/minus')['default']
-    IIconoirMoonLight: typeof import('~icons/iconoir/moon-light')['default']
     IIconoirPauseSolid: typeof import('~icons/iconoir/pause-solid')['default']
     IIconoirPlaySolid: typeof import('~icons/iconoir/play-solid')['default']
     IIconoirPlus: typeof import('~icons/iconoir/plus')['default']
     IIconoirSunLight: typeof import('~icons/iconoir/sun-light')['default']
-    IMdiAccountBox: typeof import('~icons/mdi/account-box')['default']
     NButton: typeof import('naive-ui')['NButton']
     NCard: typeof import('naive-ui')['NCard']
     NCollapseTransition: typeof import('naive-ui')['NCollapseTransition']
@@ -29,9 +26,9 @@ declare module 'vue' {
     NIcon: typeof import('naive-ui')['NIcon']
     NInput: typeof import('naive-ui')['NInput']
     NInputNumber: typeof import('naive-ui')['NInputNumber']
-    NProgress: typeof import('naive-ui')['NProgress']
     NRadio: typeof import('naive-ui')['NRadio']
-    NTimePicker: typeof import('naive-ui')['NTimePicker']
+    RouterLink: typeof import('vue-router')['RouterLink']
+    RouterView: typeof import('vue-router')['RouterView']
     TimePicker: typeof import('./src/components/TimePicker.vue')['default']
     Timer: typeof import('./src/components/Timer.vue')['default']
     VoicePicker: typeof import('./src/components/VoicePicker.vue')['default']
