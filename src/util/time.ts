@@ -143,6 +143,7 @@ let initialized = false;
 function init() {
   if (initialized) return;
   subscribeSync((msg) => {
+    if (isLeadTimer.value) return;
     if (timers && msg.config) {
       timers.value = msg.config;
     }
