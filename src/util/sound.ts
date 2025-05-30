@@ -1,10 +1,13 @@
 import { Howl } from 'howler';
+import { readonly, ref } from 'vue';
 
 export const spriteSrc = ['/voices.mp3'];
 const endRegister = new Map<number, (id: number) => void>();
 const errorRegister = new Map<number, (id: number, error: unknown) => void>();
 
 let howlInstance = null as Howl | null;
+
+const soundLocked = ref(true);
 
 export function useSound() {
   if (howlInstance == null) {
@@ -14,6 +17,7 @@ export function useSound() {
       sprite: sprites as unknown as Record<string, [number, number]>,
       onunlock: () => {
         console.log('Sound unlocked');
+        soundLocked.value = false;
       },
       onloaderror: (id, error) => {
         console.error(`Error loading sound: ${id}`, error);
@@ -39,9 +43,10 @@ export function useSound() {
     });
   }
   return {
+    soundLocked: readonly(soundLocked),
     play(voice: VoiceKey, type: keyof Voice): Promise<void> {
       return new Promise((resolve, reject) => {
-        if(howlInstance == null) {
+        if (howlInstance == null) {
           return reject(new Error("Sound not initialized"));
         }
         const soundId = howlInstance.play(voices[voice][type]);
@@ -67,47 +72,47 @@ export function useSound() {
 }
 
 export const sprites = {
-    M1_3: [0, 485],
-    M1_2: [485, 459],
-    M1_1: [944, 462],
-    M1_Lift: [1406, 450],
-    M1_Rest: [1856, 535],
-    M2_3: [2391, 423],
-    M2_2: [2815, 382],
-    M2_1: [3197, 495],
-    M2_Lift: [3692, 427],
-    M2_Rest: [4118, 522],
-    M3_3: [4640, 377],
-    M3_2: [5017, 301],
-    M3_1: [5319, 357],
-    M3_Lift: [5675, 424],
-    M3_Rest: [6100, 453],
-    M4_3: [6553, 404],
-    M4_2: [6957, 396],
-    M4_1: [7354, 400],
-    M4_Lift: [7754, 385],
-    M4_Rest: [8139, 404],
-    F1_3: [8543, 310],
-    F1_2: [8853, 378],
-    F1_1: [9231, 306],
-    F1_Lift: [9537, 434],
-    F1_Rest: [9971, 450],
-    F2_3: [10421, 420],
-    F2_2: [10842, 460],
-    F2_1: [11302, 440],
-    F2_Lift: [11742, 476],
-    F2_Rest: [12218, 453],
-    F3_3: [12671, 629],
-    F3_2: [13300, 382],
-    F3_1: [13681, 377],
-    F3_Lift: [14058, 570],
-    F3_Rest: [14628, 674],
-    F4_3: [15301, 401],
-    F4_2: [15703, 386],
-    F4_1: [16089, 401],
-    F4_Lift: [16491, 500],
-    F4_Rest: [16991, 505],
-  } as const;
+  M1_3: [0, 485],
+  M1_2: [485, 459],
+  M1_1: [944, 462],
+  M1_Lift: [1406, 450],
+  M1_Rest: [1856, 535],
+  M2_3: [2391, 423],
+  M2_2: [2815, 382],
+  M2_1: [3197, 495],
+  M2_Lift: [3692, 427],
+  M2_Rest: [4118, 522],
+  M3_3: [4640, 377],
+  M3_2: [5017, 301],
+  M3_1: [5319, 357],
+  M3_Lift: [5675, 424],
+  M3_Rest: [6100, 453],
+  M4_3: [6553, 404],
+  M4_2: [6957, 396],
+  M4_1: [7354, 400],
+  M4_Lift: [7754, 385],
+  M4_Rest: [8139, 404],
+  F1_3: [8543, 310],
+  F1_2: [8853, 378],
+  F1_1: [9231, 306],
+  F1_Lift: [9537, 434],
+  F1_Rest: [9971, 450],
+  F2_3: [10421, 420],
+  F2_2: [10842, 460],
+  F2_1: [11302, 440],
+  F2_Lift: [11742, 476],
+  F2_Rest: [12218, 453],
+  F3_3: [12671, 629],
+  F3_2: [13300, 382],
+  F3_1: [13681, 377],
+  F3_Lift: [14058, 570],
+  F3_Rest: [14628, 674],
+  F4_3: [15301, 401],
+  F4_2: [15703, 386],
+  F4_1: [16089, 401],
+  F4_Lift: [16491, 500],
+  F4_Rest: [16991, 505],
+} as const;
 
 export type Voice = Record<CueKey, keyof typeof sprites>;
 

@@ -1,109 +1,120 @@
 import { useLocalStorage } from "@vueuse/core";
-import { computed, inject, nextTick, readonly, ref, watchEffect, type App, type Ref } from "vue";
-import { useRealtime, type SyncMsg } from "./realtime";
+import { computed, readonly, ref, watch } from "vue";
+import type { TimerSettings } from "../components/Timer.vue";
+import { useRealtime } from "./realtime";
+import { debounce } from "lodash";
+
+const { subscribeSync, publishSync, clientMode } = useRealtime();
+
+const isLeadTimer = computed(() => clientMode.value === 'leadtimer');
 
 let globalTimeInterval: any = null;
 
-const isLeadTimer = ref(true);
+export type KeyedTimerSettings = { id: string, settings: TimerSettings };
 
-const globalTime = useLocalStorage('globalTime', 0);
-const globalTimeTicking = ref(false);
+const timers = useLocalStorage<KeyedTimerSettings[]>("timers", [
+  {
+    id: crypto.randomUUID(),
+    settings: {
+      name: "Team 1",
+      offset: 10,
+      onTime: 60,
+      offTime: 30,
+      rounds: 4,
+      voice: "M1",
+    }
+  },
+  {
+    id: crypto.randomUUID(),
+    settings: {
+      name: "Team 2",
+      offset: 110,
+      onTime: 60,
+      offTime: 30,
+      rounds: 4,
+      voice: "F1",
+    }
+  },
+]);
 
-const { publish, subscribe, connectedToPubSub, clientMode, subscribePresenceEnter } = useRealtime();
-
-const connectionWatcher = watchEffect(() => {
-  if (!connectedToPubSub.value) {
-    return;
+watch([timers, isLeadTimer], debounce(([newTimers, newIsLead]) => {
+  if (newIsLead && newTimers !== undefined) {
+    publishSync({
+      timestamp: Date.now(),
+      config: newTimers,
+    })
   }
-  if (clientMode.value === 'timer') {
-    console.log("Connected to Ably Pub/Sub as timer, publishing initial sync");
-    publishSyncMsg();
-  }
-  nextTick(() => {
-    connectionWatcher.stop();
-  });
+}, 1000), { immediate: true, deep: true });
+
+const leadGlobalTime = useLocalStorage('globalTime', 0);
+const followerGlobalTime = ref(0);
+
+const lastState = ref<{
+  timestamp: number;
+  time: number;
+}>({
+  timestamp: Date.now(),
+  time: 0,
 });
 
-subscribePresenceEnter(() => {
-  if (clientMode.value === 'timer') {
-    console.log("Other client connected, sending initial sync");
-    publishSyncMsg();
-  }
-});
-
-function publishSyncMsg() {
-  const now = Math.floor(Date.now() / 1000);
-  publish({
-    time: globalTime.value,
-    timestamp: now,
-    ticking: globalTimeTicking.value,
-  });
-}
-
-subscribe((msg: SyncMsg) => {
-  if (clientMode.value === 'timer') {
-    isLeadTimer.value = false;
-  }
-  if (msg.time !== undefined && msg.timestamp !== undefined) {
-    const now = Math.floor(Date.now() / 1000);
-    const elapsed = now - msg.timestamp;
-    globalTime.value = msg.time + elapsed;
-    if (msg.ticking) {
-      resume(false);
+const globalTime = computed({
+  get: () => isLeadTimer.value ? leadGlobalTime.value : followerGlobalTime.value,
+  set: (value: number) => {
+    if (isLeadTimer.value) {
+      leadGlobalTime.value = value;
     } else {
-      pause(false);
+      followerGlobalTime.value = value;
     }
   }
-});
+})
+const globalTimeTicking = ref(false);
 
-function injectGlobalTimeRefs() {
-  const time = readonly(inject('globalTime') as Ref<number>);
-  const ticking = readonly(inject('globalTimeTicking') as Ref<boolean>);
-  const formattedTime = computed(() => formatTime(time.value, true));
-  return {
-    time,
-    ticking,
-    formattedTime,
-  };
+watch([globalTimeTicking, lastState], ([newTicking, newLastState]) => {
+  publishSync({
+    timestamp: newLastState.timestamp,
+    state: {
+      ticking: newTicking,
+      time: newLastState.time,
+    }
+  })
+}, { immediate: true });
+
+const formattedTime = computed(() => formatTime(globalTime.value, true));
+
+function tick() {
+  const delta = Date.now() - lastState.value.timestamp;
+  globalTime.value = lastState.value.time + delta;
 }
 
-function tick(reverse = false) {
-  if (reverse) {
-    if (globalTime.value <= 0) return; // Prevent going below zero
-    globalTime.value -= 1;
-  } else {
-    if (globalTime.value >= Number.MAX_SAFE_INTEGER) return; // Prevent overflow
-    if (globalTime.value < 0) globalTime.value = 0; // Ensure non-negative
-    globalTime.value += 1;
-  }
-}
-
-function resume(sync = true) {
+function resume(dontSetLastState = false) {
   if (globalTimeInterval) return; // Already running
-  globalTimeInterval = setInterval(tick, 1000);
+  globalTimeInterval = setInterval(tick, 500);
   globalTimeTicking.value = true;
-  tick();
-  if (sync) {
-    publishSyncMsg();
+  if (!dontSetLastState) {
+    lastState.value = {
+      timestamp: Date.now(),
+      time: globalTime.value,
+    };
   }
+  tick();
 }
 
-function pause(sync = true) {
+function pause(dontSetLastState = false) {
   if (!globalTimeInterval) return; // Not running
   clearInterval(globalTimeInterval);
   globalTimeTicking.value = false;
   globalTimeInterval = null;
-  if (sync) {
-    publishSyncMsg();
+  if (!dontSetLastState) {
+    lastState.value = {
+      timestamp: Date.now(),
+      time: globalTime.value,
+    };
   }
 }
 
-function reset(sync = true) {
+function reset() {
   globalTime.value = 0;
   pause();
-  if (sync) {
-    publishSyncMsg();
-  }
 }
 
 function toggle() {
@@ -116,8 +127,26 @@ function toggle() {
 
 let initialized = false;
 
-function init(app: App) {
+function init() {
   if (initialized) return;
+  subscribeSync((msg) => {
+    if (isLeadTimer.value) return; // Ignore messages if I'm the lead timer
+    if (timers && msg.config) {
+      timers.value = msg.config;
+    }
+    if (msg.state) {
+      lastState.value = {
+        timestamp: msg.timestamp,
+        time: msg.state.time,
+      }
+      globalTimeTicking.value = msg.state.ticking;
+      if (msg.state.ticking) {
+        resume(true);
+      } else {
+        pause(true);
+      }
+    }
+  })
   document.addEventListener('keydown', (event) => {
     switch (event.code) {
       case 'Space':
@@ -134,31 +163,27 @@ function init(app: App) {
         event.preventDefault();
         pause();
         break;
-      case 'ArrowLeft':
-        tick(true);
-        break;
-      case 'ArrowRight':
-        tick();
-        break;
     }
   });
-  app.provide('globalTime', globalTime);
-  app.provide('globalTimeTicking', globalTimeTicking);
 }
 
 export function useGlobalTime() {
   return {
     init,
-    injectGlobalTimeRefs,
     resume,
     pause,
     reset,
     toggle,
     isLeadTimer: readonly(isLeadTimer),
+    timers,
+    globalTime: readonly(globalTime),
+    globalTimeTicking: readonly(globalTimeTicking),
+    formattedTime: readonly(formattedTime),
   }
 }
 
-export function formatTime(seconds: number, alwaysShowHours = false): string {
+export function formatTime(ms: number, alwaysShowHours = false): string {
+  const seconds = Math.floor(ms / 1000);
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
   const secs = seconds % 60;

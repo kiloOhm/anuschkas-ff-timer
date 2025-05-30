@@ -2,20 +2,11 @@
     import { useRoute } from "vue-router";
     import { useRealtime } from "../util/realtime";
     import { useGlobalTime } from "../util/time";
-    import { nextTick, watch } from "vue";
 
     const route = useRoute();
     const sessionId = route.params.sessionid as string;
 
-    const { connectedToPubSub, setMode } = useRealtime(sessionId);
-    const connectionWatcher = watch(connectedToPubSub, (connected) => {
-        if (connected) {
-        setMode("remote");
-        nextTick(() => {
-            connectionWatcher.stop();
-        })
-        }
-    }, { immediate: true });
+    const { } = useRealtime(sessionId, true);
 
     const { toggle, reset, injectGlobalTimeRefs } = useGlobalTime();
     const { formattedTime, ticking } = injectGlobalTimeRefs();
@@ -23,9 +14,6 @@
 
 <template>
     <div class="Remote h-screen w-screen relative! bg-black text-white grid place-content-center gap-24">
-        <div class="absolute top-4 right-4 rounded-full w-4 h-4" :style="{
-            backgroundColor: connectedToPubSub ? 'green' : 'red',
-        }" />
             <div @click="toggle" class="w-[18ch] flex flex-col items-center cursor-pointer">
                 <n-icon size="8em" :color="ticking ? 'green' : 'red'">
                     <i-iconoir-play-solid v-if="ticking"/>
