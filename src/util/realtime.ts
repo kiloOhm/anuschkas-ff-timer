@@ -1,4 +1,4 @@
-import { set, useLocalStorage } from "@vueuse/core";
+import { useLocalStorage } from "@vueuse/core";
 import Ably from "ably";
 import { computed, nextTick, ref, watch } from "vue";
 

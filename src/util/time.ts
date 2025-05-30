@@ -2,7 +2,7 @@ import { useLocalStorage } from "@vueuse/core";
 import { computed, inject, nextTick, readonly, ref, watchEffect, type App, type Ref } from "vue";
 import { useRealtime, type SyncMsg } from "./realtime";
 
-let globalTimeInterval: number | null = null;
+let globalTimeInterval: any = null;
 
 const isLeadTimer = ref(true);
 
