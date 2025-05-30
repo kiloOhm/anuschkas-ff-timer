@@ -1,6 +1,6 @@
 <script lang="ts" setup>
   import { useThemeVars } from 'naive-ui';
-  import { computed, effect, nextTick, ref, watch } from 'vue';
+  import { computed, effect, ref, watch } from 'vue';
   import { formatTime, useGlobalTime } from '../util/time';
   import { useSound, type CueKey, type VoiceKey } from '../util/sound';
   import { executeWithMinDuration } from '../util/js';
