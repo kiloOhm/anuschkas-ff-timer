@@ -1,13 +1,13 @@
 <script lang="ts" setup>
 import { computed } from 'vue';
-import { useRealtime } from '../util/realtime';
-const { connectedToPubSub, clientMode } = useRealtime();
+import { useRealtimeClient } from '../util/realtime';
+const { connected, mode } = useRealtimeClient();
 
 const connectedColor = computed(() => {
-  return connectedToPubSub.value ? 'green' : 'red';
+  return connected.value ? 'green' : 'red';
 });
-const clientModeColor = computed(() => {
-  switch (clientMode.value) {
+const modeColor = computed(() => {
+  switch (mode.value) {
     case 'followtimer':
       return 'yellow';
     case 'leadtimer':
@@ -24,7 +24,7 @@ const clientModeColor = computed(() => {
       backgroundColor: connectedColor
     }" />
     <div class="mode h-1 w-4 " :style="{
-      backgroundColor: clientModeColor,
+      backgroundColor: modeColor,
     }" />
   </div>
 </template>

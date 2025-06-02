@@ -4,12 +4,17 @@ import { useLocalStorage } from '@vueuse/core';
 import { useGlobalTime } from '../util/time';
 import { generateAudio } from '../util/audioGenerator';
 import { computed, ref, watch } from 'vue';
-import { useRealtime } from '../util/realtime';
+import { provideRealtime } from '../util/realtime';
 import { useRoute } from 'vue-router';
 import { useSound } from '../util/sound';
 
 const route = useRoute();
 const sessionIdOverride = route.params.sessionid as string;
+
+const rtc = provideRealtime({
+  sessionId: sessionIdOverride
+});
+const { mode, connected, takeover, sessionId } = rtc;
 
 const dark = useLocalStorage<boolean>("darkmode", false);
 const toggleTheme = () => {
@@ -18,7 +23,7 @@ const toggleTheme = () => {
 
 const themeVars = useThemeVars();
 
-const { toggle, reset, isLeadTimer, timers, formattedTime, globalTimeTicking } = useGlobalTime();
+const { toggle, reset, isLeadTimer, timers, formattedTime, globalTimeTicking } = useGlobalTime(rtc);
 
 function removeTimer(id: string) {
   const index = timers.value.findIndex(timer => timer.id === id);
@@ -57,8 +62,6 @@ function generateAudioFile() {
     alert("Failed to generate audio file.");
   })
 }
-
-const { sessionId, connectedToPubSub, clientMode, takeover } = useRealtime(sessionIdOverride);
 
 const message = useMessage();
 
@@ -141,7 +144,7 @@ const { soundLocked } = useSound();
       </n-icon>
     </template>
   </n-button>
-  <n-popover v-if="connectedToPubSub && sessionId" trigger="click">
+  <n-popover v-if="connected && sessionId" trigger="click">
     <template #trigger>
       <n-button ghost circle
         class="absolute! bottom-4 right-4 opacity-0 hover:opacity-100 transition-opacity before:absolute before:-inset-4 before:block">
@@ -154,7 +157,7 @@ const { soundLocked } = useSound();
     </template>
     <div class="flex flex-col gap-2">
       <h3 class="text-lg font-semibold text-center">Session: {{ sessionId }}</h3>
-      <n-button ghost round @click="takeover" v-if="clientMode === 'followtimer'">
+      <n-button ghost round @click="takeover" v-if="mode === 'followtimer'">
         <span>take lead</span>
       </n-button>
       <QR :value="remoteUrl" :sizePx="200" />
@@ -168,4 +171,5 @@ const { soundLocked } = useSound();
       </div>
     </div>
   </n-popover>
+  <Sync />
 </template>

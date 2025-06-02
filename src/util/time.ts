@@ -1,215 +1,274 @@
-import { useLocalStorage } from "@vueuse/core";
-import { computed, readonly, ref, watch } from "vue";
-import type { TimerSettings } from "../components/Timer.vue";
-import { useRealtime } from "./realtime";
-import { debounce } from "lodash";
+import {
+  computed,
+  readonly,
+  ref,
+  watch,
+  onMounted,
+  onUnmounted,
+  inject,
+  nextTick,
+} from 'vue';
+import { debounce } from 'lodash';
+import { useLocalStorage } from '@vueuse/core';
 
-const { subscribeSync, publishSync, clientMode } = useRealtime();
+import {
+  RealtimeKey,
+  useRealtimeClient,
+  type PresenceMsg,
+  type RemoteSignalMsg,
+  type SyncMsg,
+} from './realtime';
+import type { TimerSettings } from '../components/Timer.vue';
 
-const isLeadTimer = computed(() => clientMode.value === 'leadtimer');
-const isRemote = computed(() => clientMode.value === 'remote');
+export interface KeyedTimerSettings {
+  id: string;
+  settings: TimerSettings;
+}
 
-let globalTimeInterval: any = null;
+/* ══════════════════════════════════════════════════════════════════════════════ *
+ * 0.  Helper that *builds* the store once and only once
+ * ══════════════════════════════════════════════════════════════════════════════ */
 
-export type KeyedTimerSettings = { id: string, settings: TimerSettings };
+type Rtc = ReturnType<typeof useRealtimeClient>;
 
-const timers = useLocalStorage<KeyedTimerSettings[]>("timers", [
-  {
-    id: crypto.randomUUID(),
-    settings: {
-      name: "Team 1",
-      offset: 10,
-      onTime: 60,
-      offTime: 30,
-      rounds: 4,
-      voice: "M1",
+function initGlobalTime(rtc: Rtc) {
+  /* ─────────────── 0a. Realtime shortcuts ─────────────── */
+  const { publishSync, takeover, emitter, mode } = rtc;
+  const isLead = computed(() => mode.value === 'leadtimer');
+
+  /* ─────────────── 1. Persistent timer configuration ─────────────── */
+
+  const timers = useLocalStorage<KeyedTimerSettings[]>('timers', [
+    {
+      id: crypto.randomUUID(),
+      settings: {
+        name: 'Team 1',
+        offset: 10,
+        onTime: 60,
+        offTime: 30,
+        rounds: 4,
+        voice: 'M1',
+      },
+    },
+    {
+      id: crypto.randomUUID(),
+      settings: {
+        name: 'Team 2',
+        offset: 110,
+        onTime: 60,
+        offTime: 30,
+        rounds: 4,
+        voice: 'F1',
+      },
+    },
+  ]);
+
+  /* When the *lead* edits the config, broadcast debounced full sync */
+  watch(
+    [timers, isLead],
+    debounce(([cfg, lead]) => {
+      if (!lead) return;
+      publishSync({
+        timestamp: Date.now(),
+        config: cfg,
+        state: {
+          ticking: ticking.value,
+          time: now.value,
+        },
+      });
+    }, 1_000),
+    { immediate: true, deep: true },
+  );
+
+  /* ─────────────── 2. Global timer state ─────────────── */
+  const leadTime = useLocalStorage('globalTime', 0);
+  const followerTime = ref(0);
+
+  const now = computed({
+    get: () => (isLead.value ? leadTime.value : followerTime.value),
+    set: v => (isLead.value ? (leadTime.value = v) : (followerTime.value = v)),
+  });
+
+  const formattedTime = computed(() => formatTime(now.value));
+
+  const ticking = ref(false);
+  let ticker: number | null = null;
+
+  function _tick() {
+    const dt = Date.now() - lastSnapshot.value.timestamp;
+    now.value = lastSnapshot.value.time + dt;
+  }
+
+  function resume(quiet = false) {
+    if (ticker) return;                        // already running
+    ticker = window.setInterval(_tick, 500);
+    ticking.value = true;
+    if (!quiet) snapshot();                    // broadcast change
+    _tick();
+  }
+
+  function pause(quiet = false) {
+    if (!ticker) return;                       // already paused
+    clearInterval(ticker);
+    ticker = null;
+    ticking.value = false;
+    if (!quiet) snapshot();
+  }
+
+  function reset(quiet = false) {
+    pause(true);
+    now.value = 0;
+    if (!quiet) snapshot();
+  }
+
+  function toggle() {
+    ticker ? pause() : resume();
+  }
+
+  const lastSnapshot = ref({ timestamp: Date.now(), time: 0 });
+
+  function snapshot() {
+    lastSnapshot.value = { timestamp: Date.now(), time: now.value };
+    /* If we’re the lead, push an immediate state update */
+    if (isLead.value) {
+      publishSync({
+        timestamp: lastSnapshot.value.timestamp,
+        state: {
+          ticking: ticking.value,
+          time: lastSnapshot.value.time,
+        },
+      });
     }
-  },
-  {
-    id: crypto.randomUUID(),
-    settings: {
-      name: "Team 2",
-      offset: 110,
-      onTime: 60,
-      offTime: 30,
-      rounds: 4,
-      voice: "F1",
-    }
-  },
-]);
+  }
 
-watch([timers, isLeadTimer], debounce(([newTimers, newIsLead]) => {
-  if (newIsLead && newTimers !== undefined) {
-    publishSync({
-      from: clientMode.value!,
-      timestamp: lastState.value.timestamp ?? Date.now(),
-      config: newTimers,
-      state: {
-        ticking: globalTimeTicking.value,
-        time: globalTime.value,
+  const unWatchEmitter = watch(emitter, (newEmitter) => {
+    if (!newEmitter) return;
+    /* ─────────────── 3. React to incoming realtime traffic ─────────────── */
+    newEmitter.on('sync', (raw) => {
+      const msg = raw as SyncMsg;
+      console.log('sync', msg);
+      if (isLead.value) return; // ignore own syncs
+      if (msg.config) timers.value = msg.config;
+
+      if (msg.state) {
+        lastSnapshot.value = { timestamp: msg.timestamp, time: msg.state.time };
+        ticking.value = msg.state.ticking;
+        now.value = msg.state.time;
+        msg.state.ticking ? resume(true) : pause(true);
       }
+    });
+
+    newEmitter.on('remoteSignal', (raw) => {
+      const msg = raw as RemoteSignalMsg;
+      console.log('remoteSignal', msg);
+      if (!isLead.value) return; // only lead obeys
+      switch (msg.signal) {
+        case 'resume': resume(); break;
+        case 'pause': pause(); break;
+        case 'reset': reset(); break;
+      }
+    });
+
+    // when new follower connects, send them the current state
+    newEmitter.on('presence', (raw) => {
+      console.log('presence', raw);
+      const msg = raw as PresenceMsg;
+      if (isLead.value && msg.action !== 'leave') {
+        publishSync({
+          timestamp: Date.now(),
+          config: timers.value,
+          state: {
+            ticking: ticking.value,
+            time: now.value,
+          },
+        })
+      }
+    });
+
+    nextTick(() => {
+      unWatchEmitter();
     })
-  }
-}, 1000), { immediate: true, deep: true });
+  }, { immediate: true });
 
-const leadGlobalTime = useLocalStorage('globalTime', 0);
-const followerGlobalTime = ref(0);
-
-const lastState = ref<{
-  timestamp: number;
-  time: number;
-}>({
-  timestamp: Date.now(),
-  time: 0,
-});
-
-const globalTime = computed({
-  get: () => isLeadTimer.value ? leadGlobalTime.value : followerGlobalTime.value,
-  set: (value: number) => {
-    if (isLeadTimer.value) {
-      leadGlobalTime.value = value;
-    } else {
-      followerGlobalTime.value = value;
-    }
-  }
-})
-const globalTimeTicking = ref(false);
-
-watch([globalTimeTicking, lastState, isLeadTimer, isRemote], ([newTicking, newLastState, newIsLead, isRemote]) => {
-  if (!newIsLead && !isRemote) return;
-  publishSync({
-    from: clientMode.value!,
-    timestamp: newLastState.timestamp,
-    state: {
-      ticking: newTicking,
-      time: newLastState.time,
-    }
-  })
-}, { immediate: true, deep: true });
-
-const formattedTime = computed(() => formatTime(globalTime.value, true));
-
-function tick() {
-  const delta = Date.now() - lastState.value.timestamp;
-  globalTime.value = lastState.value.time + delta;
-}
-
-function resume(dontSetLastState = false) {
-  if (globalTimeInterval) return; // Already running
-  globalTimeInterval = setInterval(tick, 500);
-  globalTimeTicking.value = true;
-  if (!dontSetLastState) {
-    lastState.value = {
-      timestamp: Date.now(),
-      time: globalTime.value,
-    };
-  }
-  tick();
-}
-
-function pause(dontSetLastState = false) {
-  if (!globalTimeInterval) return; // Not running
-  clearInterval(globalTimeInterval);
-  globalTimeTicking.value = false;
-  globalTimeInterval = null;
-  if (!dontSetLastState) {
-    lastState.value = {
-      timestamp: Date.now(),
-      time: globalTime.value,
-    };
-  }
-}
-
-function reset(dontSetLastState = false) {
-  pause();
-  globalTime.value = 0;
-    if (!dontSetLastState) {
-    console.log("reset timer, setting last state", lastState.value);
-    lastState.value = {
-      timestamp: Date.now(),
-      time: globalTime.value,
-    };
-  }
-}
-
-function toggle() {
-  if (globalTimeInterval) {
-    pause();
-  } else {
-    resume();
-  }
-}
-
-let initialized = false;
-
-function init() {
-  if (initialized) return;
-  subscribeSync((msg) => {
-    if (isLeadTimer.value) {
-      // if (msg.from !== 'remote') return;
-      return;
-    }
-    if (timers && msg.config) {
-      timers.value = msg.config;
-    }
-    if (msg.state) {
-      lastState.value = {
-        timestamp: msg.timestamp,
-        time: msg.state.time,
-      }
-      globalTimeTicking.value = msg.state.ticking;
-      globalTime.value = msg.state.time;
-      if (msg.state.ticking) {
-        resume(true);
-      } else {
-        pause(true);
-      }
-    }
-  })
-  document.addEventListener('keydown', (event) => {
-    switch (event.code) {
+  /* ─────────────── 4. Keyboard shortcuts (lead only) ─────────────── */
+  function handleKey(e: KeyboardEvent) {
+    if (!isLead.value) return;
+    switch (e.code) {
       case 'Space':
-        event.preventDefault();
+        e.preventDefault();
         toggle();
         break;
       case 'KeyR':
-        if (!event.ctrlKey && !event.metaKey) {
-          event.preventDefault();
+        if (!e.ctrlKey && !e.metaKey) {
+          e.preventDefault();
           reset();
         }
         break;
       case 'KeyP':
-        event.preventDefault();
+        e.preventDefault();
         pause();
         break;
     }
-  });
-}
+  }
 
-export function useGlobalTime() {
+  onMounted(() => document.addEventListener('keydown', handleKey));
+  onUnmounted(() => document.removeEventListener('keydown', handleKey));
+
+  /* ─────────────── 5. Public API ─────────────── */
   return {
-    init,
+    // commands
     resume,
     pause,
     reset,
     toggle,
-    isLeadTimer: readonly(isLeadTimer),
+    takeover,
+
+    // reactive state
+    isLeadTimer: readonly(isLead),
     timers,
-    globalTime: readonly(globalTime),
-    globalTimeTicking: readonly(globalTimeTicking),
+    globalTime: readonly(now),
+    globalTimeTicking: readonly(ticking),
     formattedTime: readonly(formattedTime),
-  }
+  } as const;
 }
 
-export function formatTime(ms: number, alwaysShowHours = false): string {
-  const seconds = Math.floor(ms / 1000);
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = seconds % 60;
+/* ══════════════════════════════════════════════════════════════════════════════ *
+ * 1.  Singleton wrapper that can accept / inject / create an RTC instance
+ * ══════════════════════════════════════════════════════════════════════════════ */
 
-  if (hours > 0 || alwaysShowHours) {
-    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  } else {
-    return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+let singleton: ReturnType<typeof initGlobalTime> | null = null;
+
+/**
+ * Returns the (single) global-time store.
+ *
+ * @param rtc — (optional) an existing realtime client.  
+ *              If omitted, the function tries `inject(RealtimeKey)` and,
+ *              failing that, calls `useRealtimeClient()` to create its own.
+ */
+export function useGlobalTime(rtc?: Rtc) {
+  if (!singleton) {
+    const instance =
+      rtc ??
+      inject(RealtimeKey, null) ??
+      useRealtimeClient();
+
+    singleton = initGlobalTime(instance);
   }
+  return singleton;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════ *
+ * 2.  Utility: ms → hh:mm:ss or mm:ss
+ * ══════════════════════════════════════════════════════════════════════════════ */
+export function formatTime(ms: number, alwaysHours = false) {
+  const s = Math.floor(ms / 1_000);
+  const h = Math.floor(s / 3_600);
+  const m = Math.floor((s % 3_600) / 60);
+  const sec = s % 60;
+
+  return h > 0 || alwaysHours
+    ? `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${sec
+      .toString()
+      .padStart(2, '0')}`
+    : `${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
 }
