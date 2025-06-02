@@ -33,7 +33,7 @@ type Rtc = ReturnType<typeof useRealtimeClient>;
 
 function initGlobalTime(rtc: Rtc) {
   /* ─────────────── 0a. Realtime shortcuts ─────────────── */
-  const { publishSync, takeover, emitter, mode, connected } = rtc;
+  const { publishSync, takeover, emitter, mode } = rtc;
   const isLead = computed(() => mode.value === 'leadtimer');
 
   /* ─────────────── 1. Persistent timer configuration ─────────────── */
