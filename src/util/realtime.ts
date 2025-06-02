@@ -50,7 +50,6 @@ export interface RemoteSignalMsg {
  * Helper utilities
  * ------------------------------------------------------------------------- */
 
-const DEBUG_DEFAULT = import.meta.env?.DEV ?? false;
 const DEFAULT_API_KEY =
     'MZODpw.PK_zLw:zdg8NkO2yO45DZvlry08KuHfzpkLkFOYm2UrYkjoZDg';
 
@@ -84,7 +83,7 @@ export function createRealtimeClient(opts: RtcOptions = {}) {
     /* --------------------------------------------------------------------- */
     // 0.  Options & reactive state
     /* --------------------------------------------------------------------- */
-    const debug = opts.debug ?? DEBUG_DEFAULT;
+    const debug = opts.debug || false;
 
     const sessionId = useSessionStorage('sessionId', opts.sessionId || createUUID());
     const clientId = useSessionStorage('clientId', opts.clientId ?? createUUID());
