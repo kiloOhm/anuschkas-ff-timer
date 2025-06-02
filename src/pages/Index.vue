@@ -14,7 +14,7 @@ const sessionIdOverride = route.params.sessionid as string;
 const rtc = provideRealtime({
   sessionId: sessionIdOverride
 });
-const { mode, connected, takeover, sessionId } = rtc;
+const { mode, takeover, sessionId, offlineMode } = rtc;
 
 const dark = useLocalStorage<boolean>("darkmode", false);
 const toggleTheme = () => {
@@ -84,8 +84,8 @@ const { soundLocked } = useSound();
   <div class="relative! w-screen h-screen">
     <header>
       <n-card class="rounded-none! border-t-0! border-l-0! border-r-0!">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center">
+        <div class="flex items-center">
+          <div class="flex-1 flex items-center">
             <div @click="isLeadTimer ? toggle() : undefined" class="w-[18ch] flex items-center cursor-pointer">
               <n-icon size="3em" :color="globalTimeTicking ? themeVars.successColor : themeVars.errorColor">
                 <i-iconoir-play-solid v-if="globalTimeTicking" />
@@ -98,22 +98,26 @@ const { soundLocked } = useSound();
               <span>RESET</span>
             </n-button>
           </div>
-          <n-icon size="3em" v-if="soundLocked">
-            <i-iconoir-sound-off />
-          </n-icon>
-          <n-button @click="toggleTheme" ghost circle
-            class="relative! opacity-0 hover:opacity-100 transition-opacity before:absolute before:-inset-4 before:block">
-            <template #icon>
-              <n-icon>
-                <i-iconoir-half-moon v-if="dark" />
-                <i-iconoir-sun-light v-else />
-              </n-icon>
-            </template>
-          </n-button>
+          <div class="flex-1 flex items-center justify-center">
+            <n-icon size="3em" v-if="soundLocked">
+              <i-iconoir-sound-off />
+            </n-icon>
+          </div>
+          <div class="flex-1 flex items-center justify-end">
+            <n-button @click="toggleTheme" ghost circle
+              class="relative! opacity-0 hover:opacity-100 transition-opacity before:absolute before:-inset-4 before:block">
+              <template #icon>
+                <n-icon>
+                  <i-iconoir-half-moon v-if="dark" />
+                  <i-iconoir-sun-light v-else />
+                </n-icon>
+              </template>
+            </n-button>
+          </div>
         </div>
       </n-card>
     </header>
-    <div class="flex flex-col items-stretch p-20 pt-12 gap-4">
+    <div class="flex flex-col items-stretch p-8 gap-4">
       <div v-for="({ id }, i) in timers" :key="id" class="relative flex items-center gap-4">
         <Timer class="flex-grow" v-model:settings="timers[i].settings" />
         <n-button v-if="isLeadTimer" size="small" @click="removeTimer(id)" ghost circle
@@ -144,7 +148,7 @@ const { soundLocked } = useSound();
       </n-icon>
     </template>
   </n-button>
-  <n-popover v-if="connected && sessionId" trigger="click">
+  <n-popover v-if="sessionId" trigger="click">
     <template #trigger>
       <n-button ghost circle
         class="absolute! bottom-4 right-4 opacity-0 hover:opacity-100 transition-opacity before:absolute before:-inset-4 before:block">
@@ -156,6 +160,14 @@ const { soundLocked } = useSound();
       </n-button>
     </template>
     <div class="flex flex-col gap-2">
+      <n-switch v-model:value="offlineMode">
+        <template #checked>
+          offline
+        </template>
+        <template #unchecked>
+          online
+        </template>
+      </n-switch>
       <h3 class="text-lg font-semibold text-center">Session: {{ sessionId }}</h3>
       <n-button ghost round @click="takeover" v-if="mode === 'followtimer'">
         <span>take lead</span>
@@ -173,3 +185,9 @@ const { soundLocked } = useSound();
   </n-popover>
   <Sync />
 </template>
+
+<style scoped>
+:deep(.n-card__content) {
+  padding: 1em !important;
+}
+</style>

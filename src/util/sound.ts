@@ -1,4 +1,4 @@
-import { Howl } from 'howler';
+import { Howl, Howler } from 'howler';
 import { readonly, ref } from 'vue';
 
 export const spriteSrc = ['/voices.mp3'];
@@ -44,6 +44,7 @@ export function useSound() {
   }
   return {
     soundLocked: readonly(soundLocked),
+    beep,
     play(voice: VoiceKey, type: keyof Voice): Promise<void> {
       return new Promise((resolve, reject) => {
         if (howlInstance == null) {
@@ -180,3 +181,59 @@ export const voices: Record<VoiceKey, Voice> = {
     Rest: 'F4_Rest',
   },
 } as const;
+
+export async function beep(
+  freq: number,
+  durationMs: number,
+  volume = 0.5,       // 0-1, before master volume
+  attack = 0.005,     // 5 ms fade-in
+  release = 0.008,    // 8 ms fade-out
+): Promise<void> {
+
+  /* ------------------------------------------------- */
+  /* 0️⃣ Block early if Web Audio isn’t active         */
+  if (!Howler.usingWebAudio || !(Howler as any).ctx) {
+    // Fallback: tiny WAV/MP3
+    new Audio('/assets/beep.mp3').play();
+    return;
+  }
+
+  const ctx = (Howler as any).ctx as AudioContext;
+
+  /* ------------------------------------------------- */
+  /* 1️⃣ Unlock context (autoplay policy)              */
+  if (ctx.state === 'suspended') await ctx.resume();
+
+  /* ------------------------------------------------- */
+  /* 2️⃣ Build graph                                   */
+  const osc  = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  osc.type = 'sine';
+  osc.frequency.value = freq;
+
+  const masterVol = Math.max(Howler.volume(), 0.25);   // floor @ -12 dB
+  gain.gain.value = 0;                                 // start silent
+
+  osc.connect(gain).connect(Howler.masterGain);
+
+  /* ------------------------------------------------- */
+  /* 3️⃣ Schedule envelope                             */
+  const now   = ctx.currentTime;
+  const start = now + 0.001;                           // tiny offset
+  const stop  = start + durationMs / 1000;
+
+  gain.gain.setValueAtTime(0, start);
+  gain.gain.linearRampToValueAtTime(volume * masterVol, start + attack);
+  gain.gain.setValueAtTime(volume * masterVol, stop - release);
+  gain.gain.linearRampToValueAtTime(0, stop);
+
+  /* ------------------------------------------------- */
+  /* 4️⃣ Play                                          */
+  osc.start(start);
+  osc.stop(stop);
+
+  return new Promise<void>(resolve => {
+    osc.onended = () => resolve();                     // TS-safe
+  });
+}

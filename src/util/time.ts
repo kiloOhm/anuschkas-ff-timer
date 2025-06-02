@@ -33,7 +33,7 @@ type Rtc = ReturnType<typeof useRealtimeClient>;
 
 function initGlobalTime(rtc: Rtc) {
   /* ─────────────── 0a. Realtime shortcuts ─────────────── */
-  const { publishSync, takeover, emitter, mode } = rtc;
+  const { publishSync, takeover, emitter, mode, connected } = rtc;
   const isLead = computed(() => mode.value === 'leadtimer');
 
   /* ─────────────── 1. Persistent timer configuration ─────────────── */
@@ -141,6 +141,11 @@ function initGlobalTime(rtc: Rtc) {
     }
   }
 
+  const debouncedSnapshot = debounce(snapshot, 2_000, {
+    leading: true,
+    trailing: true,
+  });
+
   const unWatchEmitter = watch(emitter, (newEmitter) => {
     if (!newEmitter) return;
     /* ─────────────── 3. React to incoming realtime traffic ─────────────── */
@@ -208,11 +213,39 @@ function initGlobalTime(rtc: Rtc) {
         e.preventDefault();
         pause();
         break;
+      case 'ArrowLeft':
+      case 'ArrowRight':
+        e.preventDefault();
+        /*   ← / →  = ±1 s,  ⇧← / ⇧→  = ±10 s   */
+        const step = (e.shiftKey ? 10_000 : 1_000) * (e.code === 'ArrowLeft' ? -1 : 1);
+
+        /* clamp at 0 so we never go negative */
+        now.value = Math.max(0, now.value + step);
+
+        /* keep the ticking baseline in sync so _tick() stays accurate */
+        lastSnapshot.value.time += step;
+
+        /* batch the remote syncs */
+        debouncedSnapshot();
+        break;
     }
   }
 
-  onMounted(() => document.addEventListener('keydown', handleKey));
-  onUnmounted(() => document.removeEventListener('keydown', handleKey));
+  function handleKeyUp(e: KeyboardEvent) {
+    if (!isLead.value) return;
+    if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
+      debouncedSnapshot.flush();    // send final sync right away
+    }
+  }
+
+  onMounted(() => {
+    document.addEventListener('keydown', handleKey);
+    document.addEventListener('keyup', handleKeyUp);
+  });
+  onUnmounted(() => {
+    document.removeEventListener('keydown', handleKey);
+    document.removeEventListener('keyup', handleKeyUp);
+  });
 
   /* ─────────────── 5. Public API ─────────────── */
   return {
