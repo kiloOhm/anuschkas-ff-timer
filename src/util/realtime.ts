@@ -1,292 +1,403 @@
-import { useLocalStorage } from "@vueuse/core";
-import Ably from "ably";
-import { effect, nextTick, ref, watch } from "vue";
-import type { KeyedTimerSettings } from "./time";
+import Ably, {
+    type ConnectionStateChange,
+    type PresenceMessage,
+    type RealtimeChannel,
+} from 'ably';
+import {
+    ref,
+    shallowRef,
+    computed,
+    nextTick,
+    watch,
+    onMounted,
+    onUnmounted,
+    type Ref,
+    provide,
+    type InjectionKey,
+    inject,
+} from 'vue';
+import type { KeyedTimerSettings } from './time';
+import { useSessionStorage } from '@vueuse/core';
+import createEmitter from 'mitt';
 
-let lastSyncMsg: SyncMsg | null = null;
+/* ------------------------------------------------------------------------- *
+ * Shared types
+ * ------------------------------------------------------------------------- */
 
-export type SyncMsg = {
+export type AppMode = 'leadtimer' | 'followtimer' | 'remote';
+
+export interface SyncMsg {
     timestamp: number;
     config?: KeyedTimerSettings[];
     state?: {
         ticking: boolean;
         time: number;
-    }
+    };
 }
 
-type PresenceAction = 'enter' | 'leave' | 'update';
-export type PresenceMsg = {
+export interface PresenceMsg {
     clientId: string;
     mode?: AppMode;
-    action: PresenceAction;
-    prio?: boolean // for manual takeover
+    action: 'enter' | 'leave' | 'update';
+    prio?: boolean;
 }
 
-export type AppMode = 'leadtimer' | 'followtimer' | 'remote';
-
-const ablyAPIKey = "MZODpw.PK_zLw:zdg8NkO2yO45DZvlry08KuHfzpkLkFOYm2UrYkjoZDg";
-
-const sessionId = useLocalStorage("sessionId", crypto.randomUUID());
-const currentLead = ref<string | null>(null);
-const clientMode = ref<AppMode>();
-const clientId = useLocalStorage("clientId", crypto.randomUUID());
-effect(() => {
-    console.log("Client ID: ", clientId.value);
-})
-
-const ably = new Ably.Realtime({
-    key: ablyAPIKey,
-    clientId: clientId.value,
-});
-
-const connectedToPubSub = ref(false);
-ably.connection.once("connected", () => {
-    connectedToPubSub.value = true;
-})
-
-let syncSubCounter = 0;
-const syncSubs = new Map<number, (msg: SyncMsg) => void>();
-
-export function subscribeSync(listener: (msg: SyncMsg) => void) {
-    const id = syncSubCounter++;
-    syncSubs.set(id, listener);
-    return () => {
-        syncSubs.delete(id);
-    };
+export interface RemoteSignalMsg {
+    signal: 'resume' | 'pause' | 'reset';
 }
 
-export function publishSync(msg: SyncMsg) {
-    if (!connectedToPubSub.value) {
-        console.warn("Not connected to Ably Pub/Sub, cannot publish message");
-        return;
-    }
-    const channel = ably.channels.get(sessionId.value);
-    channel.publish("message", msg);
-    lastSyncMsg = msg;
+/* ------------------------------------------------------------------------- *
+ * Helper utilities
+ * ------------------------------------------------------------------------- */
+
+const DEBUG_DEFAULT = import.meta.env?.DEV ?? false;
+const DEFAULT_API_KEY =
+    'MZODpw.PK_zLw:zdg8NkO2yO45DZvlry08KuHfzpkLkFOYm2UrYkjoZDg';
+
+function createUUID() {
+    return crypto.randomUUID();
 }
 
-let presenceCounter = 0;
-const presenceSubs = new Map<number, (msg: PresenceMsg) => void>();
-
-function subscribePresence(listener: (msg: PresenceMsg) => void) {
-    const id = presenceCounter++;
-    presenceSubs.set(id, listener);
-    return () => {
-        presenceSubs.delete(id);
-    };
+function log(debug: boolean, ...args: unknown[]) {
+    if (debug) console.log('[realtime]', ...args);
 }
 
-function init() {
-    if ((window as any)['realtimeInit'] === true) return;
-    (window as any)['realtimeInit'] = true
-    const channel = ably.channels.get(sessionId.value);
-    channel.subscribe("message", (msg) => {
-        if (msg.clientId === clientId.value) {
-            return;
-        }
-        syncSubs.forEach((listener) => {
-            listener(msg.data as SyncMsg);
-        });
+/* ------------------------------------------------------------------------- *
+ * Low‑level factory – returns an isolated realtime client instance.
+ * ------------------------------------------------------------------------- */
+
+interface RtcOptions {
+    sessionId?: string;
+    clientId?: string;
+    apiKey?: string;
+    debug?: boolean;
+    remote?: boolean;
+}
+
+type Events = {
+    sync: SyncMsg;
+    presence: PresenceMsg;
+    remoteSignal: RemoteSignalMsg;
+};
+
+export function createRealtimeClient(opts: RtcOptions = {}) {
+    /* --------------------------------------------------------------------- */
+    // 0.  Options & reactive state
+    /* --------------------------------------------------------------------- */
+    const debug = opts.debug ?? DEBUG_DEFAULT;
+
+    const sessionId = useSessionStorage('sessionId', opts.sessionId || createUUID());
+    const clientId = useSessionStorage('clientId', opts.clientId ?? createUUID());
+
+    // Exposed refs
+    const connectedToPubSub = ref(false);
+    const clientMode: Ref<AppMode> = ref(opts.remote ? 'remote' : 'followtimer');
+    const currentLead = ref<string | null>(null);
+
+    // Event emitter
+    const emitter = createEmitter<Events>();
+
+    /* --------------------------------------------------------------------- */
+    // 1.  Ably connection (lazy because Vue SSR / tests)
+    /* --------------------------------------------------------------------- */
+    const ably = new Ably.Realtime({
+        key: opts.apiKey ?? DEFAULT_API_KEY,
+        clientId: clientId.value,
+        echoMessages: false,
     });
-    function presenceHandler(presenceMsg: Ably.PresenceMessage, action: PresenceAction) {
-        if (presenceMsg.clientId === clientId.value) {
-            return;
-        }
 
-        const mode = presenceMsg.data?.mode as AppMode;
-        const prio = presenceMsg.data?.prio || false;
+    // Keep Vue ref in sync with Ably state
+    ably.connection.on((stateChange: ConnectionStateChange) => {
+        connectedToPubSub.value = stateChange.current === 'connected';
+    });
 
-        if (presenceMsg.clientId === currentLead.value && mode !== 'leadtimer') {
-            console.warn("Current lead timer left, negotiating new lead");
-            negotiateMode();
-            return;
-        }
+    /* --------------------------------------------------------------------- */
+    // 2.  Channel helpers
+    /* --------------------------------------------------------------------- */
+    const channel = computed(() =>
+        connectedToPubSub.value ? ably.channels.get(sessionId.value) : null,
+    );
 
-        if (clientMode.value === 'leadtimer' && mode === 'leadtimer') {
-            if (prio === true) {
-                console.warn("Another lead timer entered with priority, giving up lead");
-                currentLead.value = presenceMsg.clientId;
-                setMode('followtimer');
-            } else {
-                console.error("Another lead timer entered while I am in lead mode, this should not happen");
-                setMode('followtimer');
+    // (re)subscribe when channel changes
+    watch(
+        channel,
+        (newChannel, oldChannel) => {
+            if (oldChannel) {
+                // clean listeners & presence from previous channel
+                oldChannel.unsubscribe('message');
+                oldChannel.presence.unsubscribe();
+                oldChannel.presence.leave().catch(() => undefined);
+            }
+            if (newChannel) {
+                wireChannel(newChannel);
+            }
+        },
+        { immediate: true },
+    );
+
+    function wireChannel(ch: RealtimeChannel) {
+        /* ---------------- sync messages ---------------- */
+        ch.subscribe('message', (msg) => {
+            if (msg.clientId === clientId.value) return; // ignore own messages
+            if (msg.data.signal) {
+                // Remote signal message
+                const remoteSignal: RemoteSignalMsg = msg.data as RemoteSignalMsg;
+                emitter.emit('remoteSignal', remoteSignal);
                 return;
-            }
-        }
-
-        if (mode !== 'leadtimer' && clientMode.value === 'leadtimer') {
-            console.log("Follower or remote entered, rebroadcasting last sync");
-            if (lastSyncMsg) {
-                publishSync(lastSyncMsg);
             } else {
-                console.warn("No last sync message to rebroadcast");
+                emitter.emit('sync', msg.data as SyncMsg);
             }
-        }
+        });
 
-        presenceSubs.forEach((listener) => {
-            listener({
-                clientId: presenceMsg.clientId,
+        /* ---------------- presence messages ------------ */
+        const presenceHandler = (
+            p: PresenceMessage,
+            action: PresenceMsg['action'],
+        ) => {
+            if (p.clientId === clientId.value) return;
+            const mode = (p.data?.mode ?? undefined) as AppMode | undefined;
+            const prio = p.data?.prio ?? false;
+            // Lead left? renegotiate
+            if (p.clientId === currentLead.value && mode !== 'leadtimer') {
+                log(debug, 'Lead left, renegotiating');
+                negotiateMode();
+            }
+            emitter.emit('presence', {
+                clientId: p.clientId,
                 action,
                 mode,
                 prio,
             });
-        });
-    }
-    channel.presence.subscribe("enter", (presenceMsg) => presenceHandler(presenceMsg, 'enter'));
-    channel.presence.subscribe("leave", (presenceMsg) => presenceHandler(presenceMsg, 'leave'));
-    channel.presence.subscribe("update", (presenceMsg) => presenceHandler(presenceMsg, 'update'));
-}
+        };
 
-const connectionWatcher = watch(connectedToPubSub, (connected) => {
-    if (!connected) {
-        return;
+        ch.presence.subscribe('enter', (p) => presenceHandler(p, 'enter'));
+        ch.presence.subscribe('leave', (p) => presenceHandler(p, 'leave'));
+        ch.presence.subscribe('update', (p) => presenceHandler(p, 'update'));
     }
-    console.log("Connected to Ably Pub/Sub");
-    nextTick(() => {
-        connectionWatcher.stop();
-        negotiateMode();
-    });
-}, { immediate: true });
 
-async function getOtherInstances(onlyTimers = false) {
-    if (!connectedToPubSub.value) {
-        console.warn("Not connected to Ably Pub/Sub, cannot get instances");
-        return [];
-    }
-    const channel = ably.channels.get(sessionId.value);
-    const presence = await channel.presence.get();
-    const others = presence.filter(i => i.clientId !== clientId.value).map(p => ({
-        clientId: p.clientId,
-        mode: p.data?.mode as AppMode,
-    }));
-    if (onlyTimers) {
-        return others.filter(i => i.mode !== 'remote');
-    }
-    return others;
-}
+    /* --------------------------------------------------------------------- */
+    // 3.  Presence helpers
+    /* --------------------------------------------------------------------- */
 
-let addedUnloadHook = false;
-function unload() {
-    if (!connectedToPubSub.value) {
-        return;
-    }
-    if (!present) {
-        return;
-    }
-    try {
-        const channel = ably.channels.get(sessionId.value);
-        channel.presence.leave();
-        present = false;
-        ably.close();
-    } catch { }
-}
-if (!addedUnloadHook) {
-    window.addEventListener("beforeunload", unload);
-    addedUnloadHook = true;
-}
+    let disposing = false;
+    async function ensurePresence(mode: AppMode, prio = false) {
+        if (!channel.value) return;
 
-let present = false;
-async function setMode(mode: AppMode, prio = false) {
-    if (!connectedToPubSub.value) {
-        console.warn("Not connected to Ably Pub/Sub, cannot set mode");
-        return;
+        try {
+            const presenceList = await channel.value.presence.get({ clientId: clientId.value });
+            if (presenceList.length === 0) {
+                await channel.value.presence.enter({ mode, prio });
+            } else {
+                await channel.value.presence.update({ mode, prio });
+            }
+        } catch (err) {
+            log(debug, 'presence error', err);
+        }
     }
-    clientMode.value = mode;
-    const channel = ably.channels.get(sessionId.value);
-    if (present) {
-        await channel.presence.update({ mode, prio });
-    } else {
-        await channel.presence.enter({ mode, prio });
-        present = true;
-    }
-}
 
-let negotiatingMode = false;
-async function negotiateMode() {
-    if (negotiatingMode) return;
-    negotiatingMode = true;
-    // random delay to avoid deadlock
-    await new Promise(resolve => setTimeout(resolve, Math.random() * 100));
-    try {
-        if (!connectedToPubSub.value) {
-            console.warn("Not connected to Ably Pub/Sub, cannot negotiate mode");
-            return;
-        }
-        if (clientMode.value === 'remote') {
-            await setMode('remote');
-            return;
-        }
-        if (clientMode.value === 'leadtimer') {
-            console.warn("Already in lead timer mode, no negotiation needed");
-            return;
-        }
-        console.log("starting negotiation for mode as followtimer");
-        await setMode('followtimer');
-        const otherTimers = await getOtherInstances(true);
-        if (otherTimers.length === 0) {
-            console.log("No other timers found, taking lead");
-            await setMode('leadtimer');
-            currentLead.value = clientId.value;
-            return;
-        }
-        const leadTimer = otherTimers.find(i => i.mode === 'leadtimer');
-        if (leadTimer) {
-            console.log("Found lead timer, following ", leadTimer.clientId);
-            currentLead.value = leadTimer.clientId;
-            return;
-        }
-        console.log("No lead timer found, negotiating");
-        const allClientIds = [...otherTimers.map(i => i.clientId), clientId.value];
-        const leadClientId = allClientIds.sort().shift();
-        if (!leadClientId) {
-            throw new Error("No lead client ID found during negotiation");
-        }
-        if (leadClientId === clientId.value) {
-            console.log("elected as lead timer");
-            currentLead.value = clientId.value;
-            await setMode('leadtimer');
-        } else {
-            console.log("following lead timer", leadClientId);
-            currentLead.value = leadClientId;
-        }
-    } finally {
-        negotiatingMode = false;
-    }
-}
+    /* --------------------------------------------------------------------- */
+    // 4.  Lead negotiation
+    /* --------------------------------------------------------------------- */
+    let negotiating = false;
+    async function negotiateMode() {
+        if (negotiating || disposing) return;
+        negotiating = true;
 
-function takeover() {
-    if (clientMode.value !== 'followtimer') {
-        console.warn("Cannot take over lead timer, not in follow timer mode");
-        return;
+        // Random delay 0‑200ms – larger window reduces collision chance
+        await new Promise((r) => setTimeout(r, Math.random() * 200));
+
+        try {
+            if (!channel.value) return;
+
+            // If already lead or remote, nothing to do
+            if (clientMode.value === 'leadtimer' || clientMode.value === 'remote') {
+                await ensurePresence(clientMode.value);
+                return;
+            }
+
+            // Start as follower while we look around
+            clientMode.value = 'followtimer';
+            await ensurePresence('followtimer');
+
+            // Who else is here?
+            const others = (
+                await channel.value.presence.get()
+            ).filter((p) => p.clientId !== clientId.value);
+
+            const lead = others.find((p) => p.data?.mode === 'leadtimer');
+            if (lead) {
+                currentLead.value = lead.clientId;
+                log(debug, 'Following existing lead', lead.clientId);
+                return;
+            }
+
+            // No lead – elect using Ably connectionId (guaranteed unique)
+            const all = [ably.connection.id!, ...others.map((p) => p.connectionId!)];
+            all.sort();
+            const electedConnectionId = all[0];
+
+            if (electedConnectionId === ably.connection.id) {
+                log(debug, 'Elected as lead');
+                clientMode.value = 'leadtimer';
+                currentLead.value = clientId.value;
+                await ensurePresence('leadtimer');
+                // broadcast last sync if we have one
+                if (lastSync) publishSync(lastSync);
+            } else {
+                log(debug, 'Another client elected as lead');
+                currentLead.value = others.find((p) => p.connectionId === electedConnectionId)?.clientId ?? null;
+            }
+        } finally {
+            negotiating = false;
+        }
     }
-    if (currentLead.value === clientId.value) {
-        console.warn("Already the lead timer, no need to take over");
-        return;
+
+    /* --------------------------------------------------------------------- */
+    // 5.  Sync / presence public API
+    /* --------------------------------------------------------------------- */
+
+    let lastSync: SyncMsg | null = null;
+
+    function publishSync(msg: SyncMsg) {
+        if (!channel.value) return;
+        lastSync = msg;
+        channel.value.publish('message', msg).catch((e) => log(debug, 'publish error', e));
     }
-    console.log("Taking over lead timer");
-    setMode('leadtimer', true).then(() => {
+
+    async function takeover() {
+        if (clientMode.value !== 'followtimer') return;
+        clientMode.value = 'leadtimer';
         currentLead.value = clientId.value;
+        await ensurePresence('leadtimer', true);
+        log(debug, 'Manual takeover');
+        if (lastSync) publishSync(lastSync);
+    }
+
+    function publishRemoteSignal(signal: RemoteSignalMsg['signal']) {
+        if (!channel.value) return;
+        const msg: RemoteSignalMsg = { signal };
+        channel.value.publish('message', msg).catch((e) => log(debug, 'publish error', e));
+    }
+
+    /* --------------------------------------------------------------------- */
+    // 6.  Dispose / clean‑up
+    /* --------------------------------------------------------------------- */
+
+    async function dispose() {
+        disposing = true;
+        try {
+            if (channel.value) {
+                await channel.value.presence.leave();
+                channel.value.unsubscribe();
+                channel.value.presence.unsubscribe();
+            }
+            ably.close();
+        } catch (err) {
+            // ignore
+        }
+    }
+
+    /* --------------------------------------------------------------------- */
+    // 7.  Kick‑off once connected
+    /* --------------------------------------------------------------------- */
+
+    ably.connection.once('connected', () => {
+        connectedToPubSub.value = true;
+        nextTick(negotiateMode);
     });
+
+    /* --------------------------------------------------------------------- */
+    // 8.  Public surface of factory
+    /* --------------------------------------------------------------------- */
+    return {
+        // refs
+        connectedToPubSub,
+        clientMode,
+        currentLead,
+        sessionId,
+
+        // methods
+        publishSync,
+        takeover,
+        publishRemoteSignal,
+        emitter,
+        dispose,
+    } as const;
 }
 
-export function useRealtime(sessionIdOverride?: string, remote = false) {
-    if (sessionIdOverride) {
-        sessionId.value = sessionIdOverride;
-    }
-    if (remote) {
-        clientMode.value = 'remote';
-    }
+/* ------------------------------------------------------------------------- *
+ * Vue composable – handles mount / unmount automatically
+ * ------------------------------------------------------------------------- */
 
-    init();
+interface UseRealtimeOpts extends Omit<RtcOptions, 'clientId'> { }
+
+export function useRealtime(opts: UseRealtimeOpts = {}) {
+    const instance = shallowRef<ReturnType<typeof createRealtimeClient> | null>(null);
+
+    // Mirror refs for template‑friendly consumption
+    const connected = ref(false);
+    const mode: Ref<AppMode> = ref('followtimer');
+    const lead = ref<string | null>(null);
+
+    onMounted(() => {
+        instance.value = createRealtimeClient(opts);
+
+        // bind refs
+        connected.value = instance.value.connectedToPubSub.value;
+        mode.value = instance.value.clientMode.value;
+        lead.value = instance.value.currentLead.value;
+
+        // keep them reactive
+        watch(instance.value.connectedToPubSub, (v) => (connected.value = v));
+        watch(instance.value.clientMode, (v) => (mode.value = v));
+        watch(instance.value.currentLead, (v) => (lead.value = v));
+    });
+
+    onUnmounted(() => {
+        instance.value?.dispose();
+        instance.value = null;
+    });
+
+    // Helper wrappers that proxy to instance once available
+    const publishSync = (msg: SyncMsg) => instance.value?.publishSync(msg);
+    const publishRemoteSignal = (signal: RemoteSignalMsg['signal']) => instance.value?.publishRemoteSignal(signal);
+    const takeover = () => instance.value?.takeover();
+    const sessionId = computed(() => instance.value?.sessionId.value ?? '');
+    const emitter = computed(() => instance.value?.emitter);
+
     return {
+        // reactive values
+        connected,
+        mode,
+        lead,
         sessionId,
-        clientMode,
-        connectedToPubSub,
-        subscribeSync,
+
+        // methods
         publishSync,
-        subscribePresence,
-        getOtherInstances,
-        unload,
-        takeover
+        publishRemoteSignal,
+        takeover,
+        emitter
+    } as const;
+}
+
+export const RealtimeKey: InjectionKey<ReturnType<typeof useRealtime>> =
+    Symbol('Realtime-client');
+
+export function provideRealtime(opts: UseRealtimeOpts = {}) {
+    // create the singleton for this branch of the component tree
+    const realtime = useRealtime(opts);
+
+    // make it available to descendants
+    provide(RealtimeKey, realtime);
+
+    // return it in case the provider component also wants to use it locally
+    return realtime;
+}
+
+export function useRealtimeClient() {
+    const rtc = inject(RealtimeKey);
+    if (!rtc) {
+        throw new Error('useRealtimeClient() must be used after provideRealtime().');
     }
+    return rtc;
 }

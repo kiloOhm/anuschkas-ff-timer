@@ -1,7 +1,6 @@
 import { createApp } from 'vue'
 import './style.css'
 import App from './App.vue'
-import { useGlobalTime } from './util/time'
 import { router } from './routes'
 
 const bcId = crypto.randomUUID();
@@ -20,9 +19,6 @@ setTimeout(() => {
     bc.postMessage(`${bcId}:sync`);
   }
 }, Math.random() * 500);
-
-const { init } = useGlobalTime();
-init();
 
 const app = createApp(App)
 
