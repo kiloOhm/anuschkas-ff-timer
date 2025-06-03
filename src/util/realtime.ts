@@ -50,9 +50,6 @@ export interface RemoteSignalMsg {
  * Helper utilities
  * ------------------------------------------------------------------------- */
 
-const DEFAULT_API_KEY =
-    'MZODpw.PK_zLw:zdg8NkO2yO45DZvlry08KuHfzpkLkFOYm2UrYkjoZDg';
-
 function createUUID() {
     return crypto.randomUUID();
 }
@@ -124,8 +121,22 @@ export function createRealtimeClient(opts: RtcOptions = {}) {
     /* --------------------------------------------------------------------- */
     // 1.  Ably connection (lazy because Vue SSR / tests)
     /* --------------------------------------------------------------------- */
+    const fetchingToken = ref(false);
     const ably = new Ably.Realtime({
-        key: opts.apiKey ?? DEFAULT_API_KEY,
+        authCallback: async (_, callback) => {
+            let token: Ably.TokenDetails | null = null;
+            fetchingToken.value = true;
+            try {
+                const res = await fetch(`https://ably-auth.kiloohm.workers.dev/api/token?sessionid=${encodeURIComponent(sessionId.value)}&clientId=${encodeURIComponent(clientId.value)}`);
+                if (!res.ok) {
+                    throw new Error(`Failed to fetch token: ${res.status} ${res.statusText}`);
+                }
+                token = await res.json() as Ably.TokenDetails;
+            } finally {
+                fetchingToken.value = false;
+            }
+            callback(null, token);
+        },
         clientId: clientId.value,
         echoMessages: false,
     });

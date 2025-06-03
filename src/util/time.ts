@@ -19,7 +19,6 @@ import {
   type SyncMsg,
 } from './realtime';
 import type { TimerSettings } from '../components/Timer.vue';
-import { useThemeVars } from 'naive-ui';
 
 export interface KeyedTimerSettings {
   id: string;

@@ -1,0 +1,9 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "ably-auth",
+	"main": "src/index.ts",
+	"compatibility_date": "2025-06-03",
+	"observability": {
+		"enabled": true
+	}
+}
