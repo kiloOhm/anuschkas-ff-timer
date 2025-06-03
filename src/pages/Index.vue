@@ -107,7 +107,7 @@ onUnmounted(() => {
                 <i-iconoir-play-solid v-if="globalTimeTicking" />
                 <i-iconoir-pause-solid v-else />
               </n-icon>
-              <span class="text-xl font-bold">{{ formattedTime }}</span>
+              <span class="text-xl font-bold font-mono">{{ formattedTime }}</span>
             </div>
             <n-button @click="isLeadTimer && reset()" ghost round
               class="relative! hover:opacity-100 transition-opacity before:absolute before:-inset-4 before:block"

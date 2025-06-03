@@ -107,7 +107,7 @@ const showSettings = ref(false);
           borderColor: themeVars.textColor1,
           borderRadius: themeVars.borderRadius
         }">{{ state.currentRound }}</span>
-        <span class="block" :style="{
+        <span class="block font-mono" :style="{
           color: state.state === 'on' ? themeVars.successColor : themeVars.errorColor,
         }">
           {{ formattedTimeInPhase }}
