@@ -108,39 +108,42 @@ onUnmounted(() => {
 <template>
 
   <div class="h-screen w-screen overflow-x-hidden">
-    <header>
+    <header class="relative!">
       <n-card class="rounded-none! border-t-0! border-l-0! border-r-0!">
-        <div class="flex items-center">
-          <div class="flex-1 flex items-center">
-            <div @click="isLeadTimer ? toggle() : undefined" class="w-[18ch] flex items-center cursor-pointer">
+        <div class="flex items-center gap-4">
+          <div class="flex items-center gap-4">
+            <div @click="isLeadTimer ? toggle() : undefined" class="flex items-center cursor-pointer">
               <n-icon size="3em" :color="globalTimeTicking ? themeVars.successColor : themeVars.errorColor">
                 <i-iconoir-play-solid v-if="globalTimeTicking" />
                 <i-iconoir-pause-solid v-else />
               </n-icon>
               <span class="text-xl font-bold">{{ formattedTime }}</span>
             </div>
-            <n-button v-if="isLeadTimer" @click="reset()" ghost round
+            <n-button @click="isLeadTimer && reset()" ghost round
               class="relative! hover:opacity-100 transition-opacity before:absolute before:-inset-4 before:block"
-              :class="{ 'opacity-0': !showButtons }">
+              :class="{ 'opacity-0': !showButtons || !isLeadTimer, 'pointer-events-none': !isLeadTimer }">
               <span>RESET</span>
             </n-button>
           </div>
-          <div class="flex-1 flex items-center justify-center">
-            <n-icon size="3em" v-if="soundLocked">
+          <TimeLine :config="timers.map(t => t.settings)" class="flex-grow self-stretch" />
+          <n-button @click="toggleTheme" ghost circle
+            class="relative! hover:opacity-100 transition-opacity before:absolute before:-inset-4 before:block"
+            :class="{ 'opacity-0': !showButtons }">
+            <template #icon>
+              <n-icon>
+                <i-iconoir-half-moon v-if="dark" />
+                <i-iconoir-sun-light v-else />
+              </n-icon>
+            </template>
+          </n-button>
+          <div
+            class="fixed! inset-0 z-50 w-full h-full grid place-content-center backdrop-brightness-75 backdrop-blur-sm pointer-events-none transition-opacity opacity-0"
+            :class="{
+              'opacity-100': soundLocked
+            }">
+            <n-icon size="20em">
               <i-iconoir-sound-off />
             </n-icon>
-          </div>
-          <div class="flex-1 flex items-center justify-end">
-            <n-button @click="toggleTheme" ghost circle
-              class="relative! hover:opacity-100 transition-opacity before:absolute before:-inset-4 before:block"
-              :class="{ 'opacity-0': !showButtons }">
-              <template #icon>
-                <n-icon>
-                  <i-iconoir-half-moon v-if="dark" />
-                  <i-iconoir-sun-light v-else />
-                </n-icon>
-              </template>
-            </n-button>
           </div>
         </div>
       </n-card>

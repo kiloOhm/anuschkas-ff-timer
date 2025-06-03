@@ -2,7 +2,7 @@
 import { useThemeVars } from 'naive-ui';
 import { computed, ref, watch } from 'vue';
 
-import { formatTime, useGlobalTime } from '../util/time';
+import { formatTime, presetColors, useGlobalTime } from '../util/time';
 import { cueKeys, useSound, type CueKey, type VoiceKey } from '../util/sound';
 
 import { buildTimetable, getRuntimeStatus } from '../util/timeline';
@@ -14,6 +14,7 @@ export type TimerSettings = {
   offTime: number;  // sec
   rounds: number;   // work / rest cycles
   voice?: VoiceKey;
+  color?: string;
 };
 
 const settings = defineModel<TimerSettings>('settings', {
@@ -22,7 +23,7 @@ const settings = defineModel<TimerSettings>('settings', {
 });
 
 const themeVars = useThemeVars();
-const { globalTime, globalTimeTicking, isLeadTimer } = useGlobalTime();
+const { globalTime, globalTimeTicking, isLeadTimer, getColor } = useGlobalTime();
 const { play, beep } = useSound();
 
 async function cue(phrase: CueKey, force = false) {
@@ -97,8 +98,10 @@ const showSettings = ref(false);
 </script>
 
 <template>
-  <n-card hoverable>
-    <div @click="showSettings = !showSettings" class=" cursor-pointer Timer flex justify-between flex-wrap gap-8">
+  <n-card hoverable class="box-border border-2!" :style="{
+    borderColor: getColor(settings),
+  }">
+    <div @click="showSettings = !showSettings" class="cursor-pointer Timer flex justify-between flex-wrap gap-8">
       <div class="flex items-center flex-wrap gap-8 text-9xl font-extrabold">
         <span class="border-4 px-4 font-mono" :style="{
           borderColor: themeVars.textColor1,
@@ -146,6 +149,9 @@ const showSettings = ref(false);
               <time-picker v-model:seconds="settings.offTime" />
             </n-form-item>
           </div>
+          <n-form-item label="Color">
+            <n-color-picker v-model:value="settings.color" :swatches="presetColors" />
+          </n-form-item>
         </n-form>
         <div class="flex-1 flex flex-col gap-2">
           <div class="flex items-center gap-4">

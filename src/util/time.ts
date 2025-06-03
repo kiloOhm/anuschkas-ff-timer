@@ -19,6 +19,7 @@ import {
   type SyncMsg,
 } from './realtime';
 import type { TimerSettings } from '../components/Timer.vue';
+import { useThemeVars } from 'naive-ui';
 
 export interface KeyedTimerSettings {
   id: string;
@@ -42,7 +43,7 @@ export function generateDefaultConfig(): KeyedTimerSettings[] {
       id: crypto.randomUUID(),
       settings: {
         name: 'Team 2',
-        offset: 110,
+        offset: 30,
         onTime: 60,
         offTime: 30,
         rounds: 4,
@@ -58,6 +59,8 @@ export function generateDefaultConfig(): KeyedTimerSettings[] {
 
 type Rtc = ReturnType<typeof useRealtimeClient>;
 
+export const presetColors = ["#FF6B6B", "#4ECDC4", "#556270", "#C7F464", "#FF6F61", "#6A0572", "#D9BF77", "#ACD8AA"];
+
 function initGlobalTime(rtc: Rtc) {
   /* ─────────────── 0a. Realtime shortcuts ─────────────── */
   const { publishSync, takeover, emitter, mode } = rtc;
@@ -66,6 +69,13 @@ function initGlobalTime(rtc: Rtc) {
   /* ─────────────── 1. Persistent timer configuration ─────────────── */
 
   const timers = useLocalStorage<KeyedTimerSettings[]>('timerconfig', generateDefaultConfig());
+
+  function getColor(settings: TimerSettings) {
+    if (settings.color) {
+      return settings.color;
+    }
+    return presetColors.filter(c => !timers.value.some(t => t.settings.color === c))[(timers.value.map(t => t.settings).indexOf(settings)) % presetColors.length];
+  }
 
   /* When the *lead* edits the config, broadcast debounced full sync */
   watch(
@@ -266,6 +276,9 @@ function initGlobalTime(rtc: Rtc) {
     globalTime: readonly(now),
     globalTimeTicking: readonly(ticking),
     formattedTime: readonly(formattedTime),
+
+    //helpers
+    getColor,
   } as const;
 }
 
