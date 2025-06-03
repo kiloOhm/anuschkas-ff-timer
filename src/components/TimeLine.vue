@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import { computed, ref } from 'vue';
-import { useGlobalTime } from '../util/time';
+import { formatTime, useGlobalTime } from '../util/time';
 import type { TimerSettings } from './Timer.vue';
 import { buildTimetable } from '../util/timeline';
 import { useElementBounding } from '@vueuse/core';
@@ -35,7 +35,7 @@ const increments = computed(() => {
   const total = totalDuration.value;
   return Array.from({ length: incrementsNum }, (_, i) => ({
     time: (i / incrementsNum) * total,
-    label: `${Math.floor((i / (incrementsNum - 1)) * total / 60)}:${String(Math.floor((i / (incrementsNum - 1)) * total % 60)).padStart(2, '0')}`
+    label: formatTime(((i * 1000) / (incrementsNum - 1)) * total),
   }));
 });
 

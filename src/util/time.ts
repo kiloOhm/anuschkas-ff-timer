@@ -99,7 +99,10 @@ function initGlobalTime(rtc: Rtc) {
 
   const now = computed({
     get: () => (isLead.value ? leadTime.value : followerTime.value),
-    set: v => (isLead.value ? (leadTime.value = v) : (followerTime.value = v)),
+    set: v => {
+      leadTime.value = v;
+      followerTime.value = v;
+    },
   });
 
   const formattedTime = computed(() => formatTime(now.value));
