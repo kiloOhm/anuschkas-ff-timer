@@ -137,13 +137,15 @@ onUnmounted(() => {
             </template>
           </n-button>
           <div
-            class="fixed! inset-0 z-50 w-full h-full grid place-content-center backdrop-brightness-75 backdrop-blur-sm pointer-events-none transition-opacity opacity-0"
+            class="fixed! inset-0 z-50 w-full h-full grid place-content-center backdrop-brightness-75 backdrop-blur-sm transition-opacity cursor-pointer opacity-0"
             :class="{
-              'opacity-100': soundLocked
+              'opacity-100': soundLocked,
+              'pointer-events-none': !soundLocked
             }">
             <n-icon size="20em">
               <i-iconoir-sound-off />
             </n-icon>
+            <span class="text-4xl font-bold text-white">Click to enable sound</span>
           </div>
         </div>
       </n-card>
