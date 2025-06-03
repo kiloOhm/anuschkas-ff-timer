@@ -3,7 +3,7 @@ import { useMessage, useThemeVars } from 'naive-ui'
 import { useLocalStorage } from '@vueuse/core';
 import { useGlobalTime } from '../util/time';
 import { generateAudio } from '../util/audioGenerator';
-import { computed, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { provideRealtime } from '../util/realtime';
 import { useRoute } from 'vue-router';
 import { useSound } from '../util/sound';
@@ -77,11 +77,34 @@ const remoteUrl = computed(() => `${location.origin}/remote/${sessionId.value}`)
 const followerUrl = computed(() => `${location.origin}/${sessionId.value}`);
 
 const { soundLocked } = useSound();
+
+const showButtons = ref(false);
+
+function handleKeyDown(event: KeyboardEvent) {
+  if (event.key === 'Control') {
+    showButtons.value = true;
+  }
+}
+function handleKeyUp(event: KeyboardEvent) {
+  if (event.key === 'Control') {
+    showButtons.value = false;
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('keydown', handleKeyDown);
+  document.addEventListener('keyup', handleKeyUp);
+})
+onUnmounted(() => {
+  document.removeEventListener('keydown', handleKeyDown);
+  document.removeEventListener('keyup', handleKeyUp);
+});
+
 </script>
 
 <template>
 
-  <div class="relative! w-screen h-screen">
+  <div class="h-screen w-screen overflow-x-hidden">
     <header>
       <n-card class="rounded-none! border-t-0! border-l-0! border-r-0!">
         <div class="flex items-center">
@@ -94,7 +117,8 @@ const { soundLocked } = useSound();
               <span class="text-xl font-bold">{{ formattedTime }}</span>
             </div>
             <n-button @click="isLeadTimer ? reset() : undefined" ghost round
-              class="relative! opacity-0 hover:opacity-100 transition-opacity before:absolute before:-inset-4 before:block">
+              class="relative! hover:opacity-100 transition-opacity before:absolute before:-inset-4 before:block"
+              :class="{ 'opacity-0': !showButtons }">
               <span>RESET</span>
             </n-button>
           </div>
@@ -105,7 +129,8 @@ const { soundLocked } = useSound();
           </div>
           <div class="flex-1 flex items-center justify-end">
             <n-button @click="toggleTheme" ghost circle
-              class="relative! opacity-0 hover:opacity-100 transition-opacity before:absolute before:-inset-4 before:block">
+              class="relative! hover:opacity-100 transition-opacity before:absolute before:-inset-4 before:block"
+              :class="{ 'opacity-0': !showButtons }">
               <template #icon>
                 <n-icon>
                   <i-iconoir-half-moon v-if="dark" />
@@ -121,7 +146,8 @@ const { soundLocked } = useSound();
       <div v-for="({ id }, i) in timers" :key="id" class="relative flex items-center gap-4">
         <Timer class="flex-grow" v-model:settings="timers[i].settings" />
         <n-button v-if="isLeadTimer" size="small" @click="removeTimer(id)" ghost circle
-          class="absolute! top-4! right-4! opacity-0 hover:opacity-100 transition-opacity before:absolute before:-inset-4 before:block">
+          class="absolute! top-0 -right-8 h-full hover:opacity-100 transition-opacity before:absolute before:-inset-4 before:block"
+          :class="{ 'opacity-0': !showButtons }">
           <template #icon>
             <n-icon>
               <i-iconoir-minus />
@@ -130,7 +156,8 @@ const { soundLocked } = useSound();
         </n-button>
       </div>
       <n-button v-if="isLeadTimer" @click="addTimer()" ghost circle
-        class="w-full! relative! opacity-0 hover:opacity-100 transition-opacity before:absolute before:-inset-4 before:block">
+        class="w-full! relative! hover:opacity-100 transition-opacity before:absolute before:-inset-4 before:block"
+        :class="{ 'opacity-0': !showButtons }">
         <template #icon>
           <n-icon>
             <i-iconoir-plus />
@@ -140,8 +167,8 @@ const { soundLocked } = useSound();
     </div>
   </div>
   <n-button v-if="isLeadTimer" @click="generateAudioFile" :loading="generatingAudio" ghost circle
-    class="absolute! bottom-4 left-4 hover:opacity-100 transition-opacity before:absolute before:-inset-4 before:block"
-    :class="{ 'opacity-0': !generatingAudio }">
+    class="fixed! bottom-4 left-4 hover:opacity-100 transition-opacity before:absolute before:-inset-4 before:block"
+    :class="{ 'opacity-0': !generatingAudio && !showButtons }">
     <template #icon>
       <n-icon>
         <i-iconoir-download />
@@ -151,7 +178,8 @@ const { soundLocked } = useSound();
   <n-popover v-if="sessionId" trigger="click">
     <template #trigger>
       <n-button ghost circle
-        class="absolute! bottom-4 right-4 opacity-0 hover:opacity-100 transition-opacity before:absolute before:-inset-4 before:block">
+        class="fixed! bottom-4 right-4 hover:opacity-100 transition-opacity before:absolute before:-inset-4 before:block"
+        :class="{ 'opacity-0': !showButtons }">
         <template #icon>
           <n-icon>
             <i-iconoir-cloud-sync />
@@ -160,12 +188,12 @@ const { soundLocked } = useSound();
       </n-button>
     </template>
     <div class="flex flex-col gap-2">
-      <n-switch v-model:value="offlineMode">
+      <n-switch :value="!offlineMode" @update:value="(v) => offlineMode = !v">
         <template #checked>
-          offline
+          online
         </template>
         <template #unchecked>
-          online
+          offline
         </template>
       </n-switch>
       <h3 class="text-lg font-semibold text-center">Session: {{ sessionId }}</h3>

@@ -2,6 +2,7 @@ import { createApp } from 'vue'
 import './style.css'
 import App from './App.vue'
 import { router } from './routes'
+import posthogPlugin from './plugins/posthog';
 
 const bcId = crypto.randomUUID();
 const bc = new BroadcastChannel("timer-sync");
@@ -14,14 +15,12 @@ bc.onmessage = (event) => {
   }
 }
 setTimeout(() => {
-  if (router.currentRoute.value.path !== '/multitaberror') {
-    // send sync message to other tabs
-    bc.postMessage(`${bcId}:sync`);
-  }
+  bc.postMessage(`${bcId}:sync`);
 }, Math.random() * 500);
 
-const app = createApp(App)
+const app = createApp(App);
 
+app.use(posthogPlugin);
 app.use(router);
 
-app.mount('#app')
+app.mount('#app');
