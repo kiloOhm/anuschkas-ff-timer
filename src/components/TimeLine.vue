@@ -89,7 +89,7 @@ function handlePointerMove(e: PointerEvent) {
     <div class="scrubber absolute w-[2px] h-full bg-white" :class="{
       'transition-transform': scrubbing === null,
     }" :style="{
-      transform: `translateX(${scrubbing ?? globalTime / (totalDuration * 1000) * width}px)`,
+      transform: `translateX(${Math.max(0,Math.min(width, scrubbing ?? globalTime / (totalDuration * 1000) * width))}px)`,
     }" />
     <div class="scale absolute -inset-4 flex justify-between items-end-safe">
       <div v-for="(increment, i) of increments" :key="i">

@@ -266,7 +266,7 @@ function initGlobalTime(rtc: Rtc) {
   function setGlobalTime(time: number) {
     if (isLead.value) {
       now.value = time;
-      debouncedSnapshot();
+      snapshot();
     }
   }
 
