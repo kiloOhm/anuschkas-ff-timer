@@ -2,7 +2,7 @@
 import { computed } from 'vue';
 import { useRealtimeClient } from '../util/realtime';
 
-const { connected, mode, hasLead, negotiating, aloneInSession, offlineMode } = useRealtimeClient();
+const { connected, mode, hasLead, negotiating, aloneInSession, offlineMode, fetchingToken } = useRealtimeClient();
 
 const hasLeadColor = computed(() => {
   return hasLead.value ? 'green' : 'red';
@@ -29,7 +29,9 @@ const aloneColor = computed(() => {
   <div v-if="!offlineMode" class="Sync z-10 fixed bottom-0 right-0 flex gap-0.5">
     <n-tooltip>
       <template #trigger>
-        <div class="connected h-1 w-4" :style="{
+        <div class="connected h-1 w-4" :class="{
+          blinking: fetchingToken,
+        }" :style="{
           backgroundColor: connectedColor
         }" />
       </template>

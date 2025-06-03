@@ -121,6 +121,7 @@ export function createRealtimeClient(opts: RtcOptions = {}) {
     /* --------------------------------------------------------------------- */
     // 1.  Ably connection (lazy because Vue SSR / tests)
     /* --------------------------------------------------------------------- */
+    const authFailed = ref(false);
     const fetchingToken = ref(false);
     const ably = new Ably.Realtime({
         authCallback: async (_, callback) => {
@@ -135,20 +136,53 @@ export function createRealtimeClient(opts: RtcOptions = {}) {
             } finally {
                 fetchingToken.value = false;
             }
-            callback(null, token);
+            try {
+                callback(null, token);
+            } catch (err) {
+                console.error('[realtime] Auth callback error:', err);
+                authFailed.value = true; // mark auth as failed
+            }
         },
         clientId: clientId.value,
         echoMessages: false,
     });
 
+    watch(authFailed, (failed) => {
+        if (failed) {
+            console.error('[realtime] Ably auth failed, switching to offline mode');
+            offlineMode.value = true; // switch to offline mode on auth failure
+        }
+    }, { immediate: true });
+
+    let disconnectedTimeout: ReturnType<typeof setTimeout> | null = null;
+    ably.connection.on('disconnected', () => {
+        if (disconnectedTimeout === null) {
+            disconnectedTimeout = setTimeout(() => {
+                console.warn("[realtime] Ably connection didn't recover in time, switching to offline mode");
+                offlineMode.value = true; // switch to offline mode on disconnected
+            }, 5000); // wait 5 seconds before switching to offline mode
+        }
+    })
+    ably.connection.on('connected', () => {
+        if (disconnectedTimeout !== null) {
+            clearTimeout(disconnectedTimeout);
+            disconnectedTimeout = null;
+        }
+    });
+
     // Keep Vue ref in sync with Ably state
     ably.connection.on((stateChange: ConnectionStateChange) => {
         connectedToPubSub.value = stateChange.current === 'connected';
+
+        if (stateChange.current === 'suspended' || stateChange.current === 'failed') {
+            becomeOfflineLeader();
+        }
     });
 
     /* ─── react to offline / online -------------------------------------- */
     watch(offlineMode, async (off) => {
         if (off) { // ⇢ OFFLINE
+            becomeOfflineLeader();
             log(debug, 'Switching *offline*');
 
             if (channel.value) {
@@ -336,6 +370,18 @@ export function createRealtimeClient(opts: RtcOptions = {}) {
         if (lastSync) publishSync(lastSync);
     }
 
+    function becomeOfflineLeader() {
+        // A remote-only tab should keep its role.
+        if (clientMode.value === 'remote') return;
+
+        clientMode.value = 'leadtimer';
+        currentLead.value = clientId.value;
+
+        // Mark since when we became leader (used in later elections)
+        if (!leaderSince.value) {
+            leaderSince.value = Date.now();
+        }
+    }
 
     async function negotiateMode() {
         if (negotiating.value || disposing) return;
@@ -490,6 +536,7 @@ export function createRealtimeClient(opts: RtcOptions = {}) {
         peerCount,
         aloneInSession,
         peers,
+        fetchingToken,
 
         // methods
         publishSync,
@@ -552,6 +599,7 @@ export function useRealtime(opts: UseRealtimeOpts = {}) {
             }
         },
     });
+    const fetchingToken = computed(() => instance.value?.fetchingToken.value ?? false);
 
     return {
         offlineMode,
@@ -564,6 +612,7 @@ export function useRealtime(opts: UseRealtimeOpts = {}) {
         hasLead,
         negotiating,
         aloneInSession,
+        fetchingToken,
 
         // methods
         publishSync,
