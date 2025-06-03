@@ -31,6 +31,7 @@ declare module 'vue' {
     NMessageProvider: typeof import('naive-ui')['NMessageProvider']
     NPopover: typeof import('naive-ui')['NPopover']
     NRadio: typeof import('naive-ui')['NRadio']
+    NSwitch: typeof import('naive-ui')['NSwitch']
     Presence: typeof import('./src/components/Sync.vue')['default']
     QR: typeof import('./src/components/QR.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']

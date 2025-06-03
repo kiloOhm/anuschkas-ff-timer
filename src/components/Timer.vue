@@ -1,143 +1,124 @@
 <script lang="ts" setup>
 import { useThemeVars } from 'naive-ui';
-import { computed, effect, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
+
 import { formatTime, useGlobalTime } from '../util/time';
 import { useSound, type CueKey, type VoiceKey } from '../util/sound';
-import { executeWithMinDuration } from '../util/js';
+
+import { buildTimetable, getRuntimeStatus } from '../util/timeline';
 
 export type TimerSettings = {
   name: string;
-  offset: number; // in seconds
-  onTime: number; // in seconds
-  offTime: number; // in seconds
-  rounds: number; // number of work/rest cycles
-  voice: VoiceKey;
-}
-
-const themeVars = useThemeVars();
+  offset: number;   // sec
+  onTime: number;   // sec
+  offTime: number;  // sec
+  rounds: number;   // work / rest cycles
+  voice?: VoiceKey;
+};
 
 const settings = defineModel<TimerSettings>('settings', {
   type: Object as () => TimerSettings,
   required: true,
 });
 
+const themeVars = useThemeVars();
 const { globalTime, globalTimeTicking, isLeadTimer } = useGlobalTime();
-
-const { play } = useSound()
+const { play, beep } = useSound();
 
 async function cue(phrase: CueKey) {
-  if (!globalTimeTicking.value) {
-    return;
+  if (!globalTimeTicking.value) return;
+  if(settings.value.voice) {
+    await play(settings.value.voice, phrase);
+  } else {
+    switch(phrase) {
+      case 'Lift':
+      case 'Rest':
+        await beep(1000, 180);
+        await beep(1000, 180);
+        break;
+      case '3':
+        beep(600, 180)
+        break;
+      case '2':
+        beep(700, 180)
+        break;
+      case '1':
+        beep(800, 180);
+        break;
+      default:
+        console.warn(`Unknown cue phrase: ${phrase}`);
+    }
   }
-  return await play(settings.value.voice, phrase);
 }
 
-const state = computed<{
-  state: "on" | "off";
-  timeInPhase: number;
-  currentRound: number;
-  remainingSeconds: number;
-}>(() => {
-  const time = Math.floor(globalTime.value / 1000);
-  const cycleTime = settings.value.onTime + settings.value.offTime;
-  const totalTime = settings.value.offset + settings.value.rounds * cycleTime;
+/* ------------------------------------------------------------------ */
+/* 1️⃣  Build a static timetable every time the user tweaks settings   */
+/* ------------------------------------------------------------------ */
+const timetable = computed(() =>
+  buildTimetable(settings.value),
+);
 
-  if (time < settings.value.offset) {
-    return {
-      state: "off",
-      timeInPhase: time,
-      currentRound: 0,
-      remainingSeconds: Math.ceil(settings.value.offset - time),
-    };
-  }
-
-  if (time >= totalTime) {
-    return {
-      state: "off",
-      timeInPhase: 0,
-      currentRound: settings.value.rounds + 1,
-      remainingSeconds: 0,
-    };
-  }
-
-  const timeSinceOffset = time - settings.value.offset;
-  const cycleIndex = Math.floor(timeSinceOffset / cycleTime); // 0-based
-  const timeInCycle = timeSinceOffset % cycleTime;
-
-  const isOn = timeInCycle < settings.value.onTime;
-  const phaseDuration = isOn ? settings.value.onTime : settings.value.offTime;
-  const timeInPhase = isOn ? timeInCycle : timeInCycle - settings.value.onTime;
-
-  return {
-    state: isOn ? "on" : "off",
-    timeInPhase,
-    currentRound: cycleIndex + 1,
-    remainingSeconds: Math.ceil(phaseDuration - timeInPhase),
-  };
+/* ------------------------------------------------------------------ */
+/* 2️⃣  At every clock tick ask “where are we now?”                    */
+/* ------------------------------------------------------------------ */
+const state = computed(() => {
+  const t = Math.floor(globalTime.value / 1000); // sec since 0
+  return getRuntimeStatus(timetable.value, t);
 });
 
-watch(state, async (newState, oldState) => {
-  if (newState.state === "on" && oldState?.state === "off") {
-    command.value = "Lift!";
-    await executeWithMinDuration(async () => {
-      await cue("Lift");
-    }, 2000)
-  } else if (newState.state === "off" && oldState?.state === "on") {
-    command.value = "Rest!";
-    await executeWithMinDuration(async () => {
-      await cue("Rest");
-    }, 2000)
+/* ------------------------------------------------------------------ */
+/* 3️⃣  SIDE-EFFECTS: voice cues & UI commands                         */
+/* ------------------------------------------------------------------ */
+const command = ref<string | null>(null);
+
+/* Lift! / Rest! ---------------------------------------------------- */
+watch(state, async (n, o) => {
+  command.value = n.state === 'on' ? 'Lift!' : 'Rest!';
+  if (n.state === 'on' && o?.state === 'off') {
+    cue('Lift')
+  } else if (n.state === 'off' && o?.state === 'on') {
+    cue('Rest');
   }
 }, { immediate: true });
 
-watch(() => state.value.remainingSeconds, (v) => {
-  if ([3, 2, 1].includes(v) && state.value.state === "off") {
-    cue(String(v) as CueKey);
+/* 3-2-1 countdown -------------------------------------------------- */
+watch(() => state.value.remainingSeconds, sec => {
+  if (state.value.state === 'off' && [3, 2, 1].includes(sec)) {
+    cue(String(sec) as CueKey);
   }
 });
 
-const hours = computed(() => Math.floor(state.value.timeInPhase / 3600));
 const formattedTimeInPhase = computed(() => formatTime(state.value.timeInPhase * 1000));
 
 const showSettings = ref(false);
-const showCommand = ref(true);
-const command = ref<string | null>(null);
-effect(() => {
-  if (Math.floor(globalTime.value / 1000) < settings.value.offset) {
-    showCommand.value = false;
-  } else {
-    showCommand.value = true;
-  }
-})
+
 </script>
 
 <template>
   <n-card hoverable>
     <div @click="showSettings = !showSettings" class=" cursor-pointer Timer flex justify-between flex-wrap gap-8">
+      <div class="flex items-center flex-wrap gap-8 text-9xl font-extrabold">
+        <span class="border-4 px-4 font-mono" :style="{
+          borderColor: themeVars.textColor1,
+          borderRadius: themeVars.borderRadius
+        }">{{ state.currentRound }}</span>
+        <span class="block" :style="{
+          color: state.state === 'on' ? themeVars.successColor : themeVars.errorColor,
+        }">
+          {{ formattedTimeInPhase }}
+        </span>
+      </div>
       <div class="flex flex-col justify-between">
-        <h2 class="text-4xl font-bold">
+        <h2 class="text-4xl font-bold text-end">
           {{ settings.name }}
         </h2>
         <div class="flex-grow" />
-        <span class="text-6xl font-extrabold transition-opacity py-2 px-8" :style="{
-          opacity: showCommand ? 1 : 0,
+        <span class="text-6xl font-extrabold py-2 px-8" :style="{
           backgroundColor: themeVars.textColor1,
           color: themeVars.baseColor,
           borderRadius: themeVars.borderRadius,
         }">
           {{ command }}
-        </span>
-      </div>
-      <div class="flex items-center flex-wrap gap-8 text-9xl font-extrabold">
-        <span class="border-4 px-8 font-mono" :style="{
-          borderColor: themeVars.textColor1,
-          borderRadius: themeVars.borderRadius
-        }">{{ state.currentRound }}</span>
-        <span class="block" :style="{
-          width: hours > 0 ? '8ch' : '5.5ch',
-          color: state.state === 'on' ? themeVars.successColor : themeVars.errorColor,
-        }">
-          {{ formattedTimeInPhase }}
         </span>
       </div>
     </div>
@@ -165,8 +146,18 @@ effect(() => {
           </div>
         </n-form>
         <div>
-          <span class="ml-2 text-xl">Choose a voice:</span>
-          <voice-picker v-model:chosen-voice="settings.voice" />
+          <div class="flex items-center justify-between gap-4">
+            <span class="ml-2 text-xl">Choose a voice:</span>
+            <n-switch :value="settings.voice !== undefined" @update:value="(v) => v ? settings.voice = 'F1' : settings.voice = undefined">
+              <template #checked>
+                voice
+              </template>
+              <template #unchecked>
+                beep
+              </template>
+            </n-switch>
+          </div>
+          <voice-picker v-if="settings.voice" v-model:chosen-voice="settings.voice" />
         </div>
       </div>
     </n-collapse-transition>
