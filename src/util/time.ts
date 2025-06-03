@@ -114,7 +114,7 @@ function initGlobalTime(rtc: Rtc) {
 
   function resume(quiet = false) {
     if (ticker) return;                        // already running
-    ticker = window.setInterval(_tick, 500);
+    ticker = window.setInterval(_tick, 300);
     ticking.value = true;
     if (!quiet) snapshot();                    // broadcast change
     _tick();
@@ -154,7 +154,7 @@ function initGlobalTime(rtc: Rtc) {
     }
   }
 
-  const debouncedSnapshot = debounce(snapshot, 2_000, {
+  const debouncedSnapshot = debounce(snapshot, 1_000, {
     leading: true,
     trailing: true,
   });
@@ -260,6 +260,13 @@ function initGlobalTime(rtc: Rtc) {
     document.removeEventListener('keyup', handleKeyUp);
   });
 
+  function setGlobalTime(time: number) {
+    if (isLead.value) {
+      now.value = time;
+      debouncedSnapshot();
+    }
+  }
+
   /* ─────────────── 5. Public API ─────────────── */
   return {
     // commands
@@ -268,6 +275,7 @@ function initGlobalTime(rtc: Rtc) {
     reset,
     toggle,
     takeover,
+    setGlobalTime,
 
     // reactive state
     isLeadTimer: readonly(isLead),

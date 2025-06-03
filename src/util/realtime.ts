@@ -19,6 +19,7 @@ import {
 import type { KeyedTimerSettings } from './time';
 import { useSessionStorage } from '@vueuse/core';
 import createEmitter from 'mitt';
+import { throttle } from 'lodash';
 
 /* ------------------------------------------------------------------------- *
  * Shared types
@@ -461,15 +462,16 @@ export function createRealtimeClient(opts: RtcOptions = {}) {
 
     let lastSync: SyncMsg | null = null;
 
-    function publishSync(msg: SyncMsg) {
+    const publishSync = throttle((msg: SyncMsg) => {
         if (offlineMode.value || !channel.value) return;
+        console.log('[realtime] publishing sync', msg);
         lastSync = msg;
         if (aloneInSession.value) {
             log(debug, 'no need to publish sync, alone in session');
             return;
         }
         channel.value.publish('message', msg).catch((e) => log(debug, 'publish error', e));
-    }
+    }, 1000);
 
     async function takeover() {
         if (clientMode.value !== 'followtimer') return;

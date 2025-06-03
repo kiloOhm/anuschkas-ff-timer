@@ -150,7 +150,8 @@ const showSettings = ref(false);
             </n-form-item>
           </div>
           <n-form-item label="Color">
-            <n-color-picker v-model:value="settings.color" :swatches="presetColors" />
+            <n-color-picker :value="settings.color ?? getColor(settings)" @update:value="(v) => settings.color = v"
+              :swatches="presetColors" />
           </n-form-item>
         </n-form>
         <div class="flex-1 flex flex-col gap-2">

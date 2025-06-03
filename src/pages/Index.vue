@@ -23,7 +23,7 @@ const toggleTheme = () => {
 
 const themeVars = useThemeVars();
 
-const { toggle, reset, isLeadTimer, timers, formattedTime, globalTimeTicking } = useGlobalTime(rtc);
+const { toggle, reset, isLeadTimer, timers, formattedTime, globalTimeTicking, setGlobalTime } = useGlobalTime(rtc);
 
 function removeTimer(id: string) {
   const index = timers.value.findIndex(timer => timer.id === id);
@@ -32,17 +32,7 @@ function removeTimer(id: string) {
   }
 }
 function addTimer() {
-  timers.value.push({
-    id: crypto.randomUUID(),
-    settings: {
-      name: `new Team`,
-      offset: 10,
-      onTime: 20 * 60,
-      offTime: 10 * 60,
-      rounds: 4,
-      voice: "M1",
-    }
-  });
+  timers.value.push(generateDefaultConfig()[0]);
 }
 
 function restoreDefaultConfig() {
@@ -125,7 +115,8 @@ onUnmounted(() => {
               <span>RESET</span>
             </n-button>
           </div>
-          <TimeLine :config="timers.map(t => t.settings)" class="flex-grow self-stretch" />
+          <TimeLine :config="timers.map(t => t.settings)" @scrub="(t) => setGlobalTime(t)"
+            class="flex-grow self-stretch" />
           <n-button @click="toggleTheme" ghost circle
             class="relative! hover:opacity-100 transition-opacity before:absolute before:-inset-4 before:block"
             :class="{ 'opacity-0': !showButtons }">
