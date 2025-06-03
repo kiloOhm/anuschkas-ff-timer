@@ -3,7 +3,7 @@ import { useThemeVars } from 'naive-ui';
 import { computed, ref, watch } from 'vue';
 
 import { formatTime, useGlobalTime } from '../util/time';
-import { useSound, type CueKey, type VoiceKey } from '../util/sound';
+import { cueKeys, useSound, type CueKey, type VoiceKey } from '../util/sound';
 
 import { buildTimetable, getRuntimeStatus } from '../util/timeline';
 
@@ -25,25 +25,27 @@ const themeVars = useThemeVars();
 const { globalTime, globalTimeTicking, isLeadTimer } = useGlobalTime();
 const { play, beep } = useSound();
 
-async function cue(phrase: CueKey) {
-  if (!globalTimeTicking.value) return;
-  if(settings.value.voice) {
+async function cue(phrase: CueKey, force = false) {
+  if (!globalTimeTicking.value && !force) return;
+  if (settings.value.voice) {
     await play(settings.value.voice, phrase);
   } else {
-    switch(phrase) {
+    switch (phrase) {
       case 'Lift':
+        await beep(1000, 600);
+        break;
       case 'Rest':
         await beep(1000, 180);
         await beep(1000, 180);
         break;
       case '3':
-        beep(600, 180)
+        beep(700, 180)
         break;
       case '2':
         beep(700, 180)
         break;
       case '1':
-        beep(800, 180);
+        beep(700, 180);
         break;
       default:
         console.warn(`Unknown cue phrase: ${phrase}`);
@@ -125,7 +127,7 @@ const showSettings = ref(false);
     <n-collapse-transition v-if="isLeadTimer" :show="showSettings">
       <n-divider />
       <div class="flex gap-4">
-        <n-form class="flex-grow">
+        <n-form class="flex-1">
           <n-form-item label="Name">
             <n-input v-model:value="settings.name" placeholder="Timer Name" />
           </n-form-item>
@@ -145,19 +147,25 @@ const showSettings = ref(false);
             </n-form-item>
           </div>
         </n-form>
-        <div>
-          <div class="flex items-center justify-between gap-4">
-            <span class="ml-2 text-xl">Choose a voice:</span>
-            <n-switch :value="settings.voice !== undefined" @update:value="(v) => v ? settings.voice = 'F1' : settings.voice = undefined">
+        <div class="flex-1 flex flex-col gap-2">
+          <div class="flex items-center gap-4">
+            <span class="text-xl">Cues:</span>
+            <n-switch :value="settings.voice !== undefined"
+              @update:value="(v) => v ? settings.voice = 'F1' : settings.voice = undefined">
               <template #checked>
-                voice
+                Voice
               </template>
               <template #unchecked>
-                beep
+                Beep
               </template>
             </n-switch>
           </div>
           <voice-picker v-if="settings.voice" v-model:chosen-voice="settings.voice" />
+          <div v-else class="flex items-center gap-2">
+            <n-button v-for="cueKey in cueKeys" :key="cueKey" size="small" ghost @click="cue(cueKey, true)">
+              {{ cueKey }}
+            </n-button>
+          </div>
         </div>
       </div>
     </n-collapse-transition>

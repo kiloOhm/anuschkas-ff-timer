@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useMessage, useThemeVars } from 'naive-ui'
 import { useLocalStorage } from '@vueuse/core';
-import { useGlobalTime } from '../util/time';
+import { generateDefaultConfig, useGlobalTime } from '../util/time';
 import { generateAudio } from '../util/audioGenerator';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { provideRealtime } from '../util/realtime';
@@ -43,6 +43,10 @@ function addTimer() {
       voice: "M1",
     }
   });
+}
+
+function restoreDefaultConfig() {
+  timers.value = generateDefaultConfig();
 }
 
 const encodingProgress = ref<number>(0);
@@ -99,7 +103,6 @@ onUnmounted(() => {
   document.removeEventListener('keydown', handleKeyDown);
   document.removeEventListener('keyup', handleKeyUp);
 });
-
 </script>
 
 <template>
@@ -116,7 +119,7 @@ onUnmounted(() => {
               </n-icon>
               <span class="text-xl font-bold">{{ formattedTime }}</span>
             </div>
-            <n-button @click="isLeadTimer ? reset() : undefined" ghost round
+            <n-button v-if="isLeadTimer" @click="reset()" ghost round
               class="relative! hover:opacity-100 transition-opacity before:absolute before:-inset-4 before:block"
               :class="{ 'opacity-0': !showButtons }">
               <span>RESET</span>
@@ -142,11 +145,11 @@ onUnmounted(() => {
         </div>
       </n-card>
     </header>
-    <div class="flex flex-col items-stretch p-8 gap-4">
+    <div class="flex flex-col items-stretch py-8 px-12 gap-4">
       <div v-for="({ id }, i) in timers" :key="id" class="relative flex items-center gap-4">
         <Timer class="flex-grow" v-model:settings="timers[i].settings" />
         <n-button v-if="isLeadTimer" size="small" @click="removeTimer(id)" ghost circle
-          class="absolute! top-0 -right-8 h-full hover:opacity-100 transition-opacity before:absolute before:-inset-4 before:block"
+          class="absolute! top-0 -right-10 h-full! hover:opacity-100 transition-opacity before:absolute before:-inset-4 before:block"
           :class="{ 'opacity-0': !showButtons }">
           <template #icon>
             <n-icon>
@@ -166,7 +169,7 @@ onUnmounted(() => {
       </n-button>
     </div>
   </div>
-  <n-button v-if="isLeadTimer" @click="generateAudioFile" :loading="generatingAudio" ghost circle
+  <n-button v-if="isLeadTimer" @click="generateAudioFile" :loading="generatingAudio" ghost round
     class="fixed! bottom-4 left-4 hover:opacity-100 transition-opacity before:absolute before:-inset-4 before:block"
     :class="{ 'opacity-0': !generatingAudio && !showButtons }">
     <template #icon>
@@ -174,10 +177,16 @@ onUnmounted(() => {
         <i-iconoir-download />
       </n-icon>
     </template>
+    <span>Generate mp3</span>
+  </n-button>
+  <n-button v-if="isLeadTimer" @click="restoreDefaultConfig" ghost round
+    class="fixed! bottom-4 left-1/2 -translate-x-1/2 hover:opacity-100 transition-opacity before:absolute before:-inset-4 before:block"
+    :class="{ 'opacity-0': !showButtons }">
+    <span>Restore default config</span>
   </n-button>
   <n-popover v-if="sessionId" trigger="click">
     <template #trigger>
-      <n-button ghost circle
+      <n-button ghost round
         class="fixed! bottom-4 right-4 hover:opacity-100 transition-opacity before:absolute before:-inset-4 before:block"
         :class="{ 'opacity-0': !showButtons }">
         <template #icon>
@@ -185,6 +194,7 @@ onUnmounted(() => {
             <i-iconoir-cloud-sync />
           </n-icon>
         </template>
+        <span>Sync</span>
       </n-button>
     </template>
     <div class="flex flex-col gap-2">

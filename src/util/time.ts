@@ -25,20 +25,8 @@ export interface KeyedTimerSettings {
   settings: TimerSettings;
 }
 
-/* ══════════════════════════════════════════════════════════════════════════════ *
- * 0.  Helper that *builds* the store once and only once
- * ══════════════════════════════════════════════════════════════════════════════ */
-
-type Rtc = ReturnType<typeof useRealtimeClient>;
-
-function initGlobalTime(rtc: Rtc) {
-  /* ─────────────── 0a. Realtime shortcuts ─────────────── */
-  const { publishSync, takeover, emitter, mode } = rtc;
-  const isLead = computed(() => mode.value === 'leadtimer');
-
-  /* ─────────────── 1. Persistent timer configuration ─────────────── */
-
-  const timers = useLocalStorage<KeyedTimerSettings[]>('timers', [
+export function generateDefaultConfig(): KeyedTimerSettings[] {
+  return [
     {
       id: crypto.randomUUID(),
       settings: {
@@ -61,7 +49,23 @@ function initGlobalTime(rtc: Rtc) {
         voice: 'F1',
       },
     },
-  ]);
+  ];
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════ *
+ * 0.  Helper that *builds* the store once and only once
+ * ══════════════════════════════════════════════════════════════════════════════ */
+
+type Rtc = ReturnType<typeof useRealtimeClient>;
+
+function initGlobalTime(rtc: Rtc) {
+  /* ─────────────── 0a. Realtime shortcuts ─────────────── */
+  const { publishSync, takeover, emitter, mode } = rtc;
+  const isLead = computed(() => mode.value === 'leadtimer');
+
+  /* ─────────────── 1. Persistent timer configuration ─────────────── */
+
+  const timers = useLocalStorage<KeyedTimerSettings[]>('timerconfig', generateDefaultConfig());
 
   /* When the *lead* edits the config, broadcast debounced full sync */
   watch(
@@ -81,7 +85,7 @@ function initGlobalTime(rtc: Rtc) {
   );
 
   /* ─────────────── 2. Global timer state ─────────────── */
-  const leadTime = useLocalStorage('globalTime', 0);
+  const leadTime = useLocalStorage('leadtime', 0);
   const followerTime = ref(0);
 
   const now = computed({

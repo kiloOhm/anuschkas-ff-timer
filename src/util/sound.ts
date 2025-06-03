@@ -193,8 +193,6 @@ export async function beep(
   /* ------------------------------------------------- */
   /* 0️⃣ Block early if Web Audio isn’t active         */
   if (!Howler.usingWebAudio || !(Howler as any).ctx) {
-    // Fallback: tiny WAV/MP3
-    new Audio('/assets/beep.mp3').play();
     return;
   }
 
@@ -206,10 +204,10 @@ export async function beep(
 
   /* ------------------------------------------------- */
   /* 2️⃣ Build graph                                   */
-  const osc  = ctx.createOscillator();
+  const osc = ctx.createOscillator();
   const gain = ctx.createGain();
 
-  osc.type = 'sine';
+  osc.type = 'sawtooth';
   osc.frequency.value = freq;
 
   const masterVol = Math.max(Howler.volume(), 0.25);   // floor @ -12 dB
@@ -219,9 +217,9 @@ export async function beep(
 
   /* ------------------------------------------------- */
   /* 3️⃣ Schedule envelope                             */
-  const now   = ctx.currentTime;
+  const now = ctx.currentTime;
   const start = now + 0.001;                           // tiny offset
-  const stop  = start + durationMs / 1000;
+  const stop = start + durationMs / 1000;
 
   gain.gain.setValueAtTime(0, start);
   gain.gain.linearRampToValueAtTime(volume * masterVol, start + attack);

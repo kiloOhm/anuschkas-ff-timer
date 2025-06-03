@@ -88,46 +88,35 @@ export function createRealtimeClient(opts: RtcOptions = {}) {
     const offlineMode = ref(false); // ← 🆕 public toggle
 
     const sessionId = useSessionStorage('sessionId', opts.sessionId || createUUID());
-    if(opts.sessionId && sessionId.value !== opts.sessionId) {
+    if (opts.sessionId && sessionId.value !== opts.sessionId) {
         log(debug, 'Session ID mismatch, resetting to new value', opts.sessionId);
         sessionId.value = opts.sessionId;
     }
     const clientId = useSessionStorage('clientId', opts.clientId ?? createUUID());
-    if(opts.clientId && clientId.value !== opts.clientId) {
+    if (opts.clientId && clientId.value !== opts.clientId) {
         log(debug, 'Client ID mismatch, resetting to new value', opts.clientId);
         clientId.value = opts.clientId;
     }
 
-    const peers      = new Set<string>(); // other clientIds (never includes us)
-    const peerCount   = ref(0);
+    const peers = new Set<string>(); // other clientIds (never includes us)
+    const peerCount = ref(0);
     const aloneInSession = computed(() => peerCount.value === 0);
-    
+
     // 💾  Persist the fact that THIS browser tab used to be leader and since when
-    const wasLeader = useSessionStorage('wasLeader', false);
     const leaderSince = useSessionStorage<number>('leaderSince', 0);
 
     // Exposed refs
     const connectedToPubSub = ref(false);
-        const clientMode: Ref<AppMode> = ref(
+    const clientMode: Ref<AppMode> = ref(
         opts.remote
             ? 'remote'
-            : wasLeader.value
-                ? 'leadtimer'
-                : 'followtimer',
+            : 'followtimer',
     );
 
     const currentLead = ref<string | null>(null);
 
     // Computed helper – leader present?
     const leaderPresent = computed(() => currentLead.value !== null);
-
-    // Keep the persistence flags in sync with the runtime mode
-    watch(clientMode, (v) => {
-        wasLeader.value = v === 'leadtimer';
-        if (v === 'leadtimer') {
-            leaderSince.value = Date.now();
-        }
-    });
 
     // Event emitter
     const emitter = createEmitter<Events>();
@@ -156,10 +145,10 @@ export function createRealtimeClient(opts: RtcOptions = {}) {
                     await channel.value.presence.leave();
                     channel.value.unsubscribe();
                     channel.value.presence.unsubscribe();
-                } catch (_) {/* ignore */}
+                } catch (_) {/* ignore */ }
             }
             peers.clear();
-            peerCount.value   = 0;
+            peerCount.value = 0;
             currentLead.value = null;
             connectedToPubSub.value = false; // severs the computed `channel`
             ably.close();                    // closes WebSocket & aborts retries
@@ -232,7 +221,15 @@ export function createRealtimeClient(opts: RtcOptions = {}) {
 
             // keep track of who the current lead is
             if (mode === 'leadtimer' && action !== 'leave') {
+                console.log('A wild lead appears!', p.clientId, p.data);
                 currentLead.value = p.clientId;
+                if (clientMode.value === 'leadtimer' && p.clientId !== clientId.value) {
+                    // If we are lead, but someone else is now lead, we need to step down
+                    log(debug, 'Stepping down from lead');
+                    clientMode.value = 'followtimer';
+                    leaderSince.value = 0; // reset leaderSince
+                    ensurePresence('followtimer'); // update presence
+                }
             }
             if (action === 'leave' && p.clientId === currentLead.value) {
                 currentLead.value = null;
@@ -358,6 +355,7 @@ export function createRealtimeClient(opts: RtcOptions = {}) {
 
             // Stage ① – any leader who thinks they have priority?
             const prioLeads = leads.filter((p) => (p.data as any)?.prio);
+            console.log({ prioLeads })
 
             if (prioLeads.length) {
                 // Prefer the one running the longest (earliest leaderSince)
@@ -409,7 +407,7 @@ export function createRealtimeClient(opts: RtcOptions = {}) {
     function publishSync(msg: SyncMsg) {
         if (offlineMode.value || !channel.value) return;
         lastSync = msg;
-        if(aloneInSession.value) {
+        if (aloneInSession.value) {
             log(debug, 'no need to publish sync, alone in session');
             return;
         }
@@ -451,16 +449,16 @@ export function createRealtimeClient(opts: RtcOptions = {}) {
     /* --------------------------------------------------------------------- */
 
     const onConnected = () => {
-     if (offlineMode.value) return;   // ignore if user flipped offline mid-handshake
-     connectedToPubSub.value = true;
-     nextTick(async () => {
-        await ensurePresence(clientMode.value, clientMode.value === 'leadtimer');
-        negotiateMode();
-        if(lastSync) {
-            // If we have a last sync, publish it immediately
-            publishSync(lastSync);
-        }
-     });
+        if (offlineMode.value) return;   // ignore if user flipped offline mid-handshake
+        connectedToPubSub.value = true;
+        nextTick(async () => {
+            await ensurePresence(clientMode.value);
+            negotiateMode();
+            if (lastSync) {
+                // If we have a last sync, publish it immediately
+                publishSync(lastSync);
+            }
+        });
     };
 
     ably.connection.on('connected', onConnected);
