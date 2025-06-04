@@ -1,4 +1,4 @@
-# Anuschka's FF Timer
+# [Anuschka's FF Timer](https://anuschkas-ff-timer.vercel.app)
 
 ## Why does this exist?
 
