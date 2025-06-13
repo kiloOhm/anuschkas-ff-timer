@@ -74,12 +74,19 @@ const { soundLocked } = useSound();
 
 const showButtons = ref(false);
 
+function isInputFocused() {
+  const el = document.activeElement as HTMLElement | null;
+  return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable);
+}
+
 function handleKeyDown(event: KeyboardEvent) {
+  if (isInputFocused()) return;
   if (event.key === 'Control') {
     showButtons.value = true;
   }
 }
 function handleKeyUp(event: KeyboardEvent) {
+  if (isInputFocused()) return;
   if (event.key === 'Control') {
     showButtons.value = false;
   }

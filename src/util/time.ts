@@ -212,8 +212,13 @@ function initGlobalTime(rtc: Rtc) {
   }, { immediate: true });
 
   /* ─────────────── 4. Keyboard shortcuts (lead only) ─────────────── */
+  function isInputFocused() {
+    const el = document.activeElement as HTMLElement | null;
+    return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable);
+  }
+
   function handleKey(e: KeyboardEvent) {
-    if (!isLead.value) return;
+    if (!isLead.value || isInputFocused()) return;
     switch (e.code) {
       case 'Space':
         e.preventDefault();
@@ -248,7 +253,7 @@ function initGlobalTime(rtc: Rtc) {
   }
 
   function handleKeyUp(e: KeyboardEvent) {
-    if (!isLead.value) return;
+    if (!isLead.value || isInputFocused()) return;
     if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
       debouncedSnapshot.flush();    // send final sync right away
     }
