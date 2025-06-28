@@ -172,9 +172,33 @@ function initGlobalTime(rtc: Rtc) {
       if (msg.config) timers.value = msg.config;
 
       if (msg.state) {
-        lastSnapshot.value = { timestamp: msg.timestamp, time: msg.state.time };
+        /*
+         * Use the local clock as the baseline for follower mode to
+         * avoid drift when the leader's and follower's system clocks
+         * are out of sync. Only the "time" from the leader matters for
+         * the follower, not the leader's timestamp.
+         *
+         * However, we still want to compensate for network latency. The
+         * timestamp included with the sync message tells us when the
+         * leader sent it. By adding the message age to `time`, the
+         * follower starts closer to the leader's current time.
+         */
+        const receivedAt = Date.now();
+        // We only want to compensate for network latency. If the local clock is
+        // ahead of the leader's clock, `receivedAt - msg.timestamp` would be
+        // huge. Cap the offset to avoid applying large corrections for skewed
+        // system clocks.
+        const MAX_LATENCY_OFFSET_MS = 2_000; // clamp to two seconds
+        const msgAge = Math.min(
+          MAX_LATENCY_OFFSET_MS,
+          Math.max(0, receivedAt - msg.timestamp),
+        );
+        lastSnapshot.value = {
+          timestamp: receivedAt,
+          time: msg.state.time + msgAge,
+        };
         ticking.value = msg.state.ticking;
-        now.value = msg.state.time;
+        now.value = msg.state.time + msgAge;
         msg.state.ticking ? resume(true) : pause(true);
       }
     });
