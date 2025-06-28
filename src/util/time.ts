@@ -36,6 +36,7 @@ export function generateDefaultConfig(): KeyedTimerSettings[] {
         offTime: 30,
         rounds: 4,
         voice: 'M1',
+        warningBeep: true,
       },
     },
     {
@@ -47,6 +48,7 @@ export function generateDefaultConfig(): KeyedTimerSettings[] {
         offTime: 30,
         rounds: 4,
         voice: 'F1',
+        warningBeep: true,
       },
     },
   ];
@@ -176,7 +178,7 @@ function initGlobalTime(rtc: Rtc) {
          * Use the local clock as the baseline for follower mode to
          * avoid drift when the leader's and follower's system clocks
          * are out of sync. Only the "time" from the leader matters for
-         * the follower, not the leader's timestamp.
+         * the follower, not the leader's timestamp
          *
          * However, we still want to compensate for network latency. The
          * timestamp included with the sync message tells us when the
