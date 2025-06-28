@@ -172,7 +172,13 @@ function initGlobalTime(rtc: Rtc) {
       if (msg.config) timers.value = msg.config;
 
       if (msg.state) {
-        lastSnapshot.value = { timestamp: msg.timestamp, time: msg.state.time };
+        /*
+         * Use the local clock as the baseline for follower mode to
+         * avoid drift when the leader's and follower's system clocks
+         * are out of sync. Only the "time" from the leader matters for
+         * the follower, not the leader's timestamp.
+         */
+        lastSnapshot.value = { timestamp: Date.now(), time: msg.state.time };
         ticking.value = msg.state.ticking;
         now.value = msg.state.time;
         msg.state.ticking ? resume(true) : pause(true);
