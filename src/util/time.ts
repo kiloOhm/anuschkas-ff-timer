@@ -36,6 +36,7 @@ export function generateDefaultConfig(): KeyedTimerSettings[] {
         offTime: 30,
         rounds: 4,
         voice: 'M1',
+        warningBeep: true,
       },
     },
     {
@@ -47,6 +48,7 @@ export function generateDefaultConfig(): KeyedTimerSettings[] {
         offTime: 30,
         rounds: 4,
         voice: 'F1',
+        warningBeep: true,
       },
     },
   ];
