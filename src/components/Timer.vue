@@ -89,6 +89,9 @@ watch(() => state.value.remainingSeconds, sec => {
   if (state.value.state === 'off' && [3, 2, 1].includes(sec)) {
     cue(String(sec) as CueKey);
   }
+  if (state.value.state === 'on' && sec === 5 && globalTimeTicking.value) {
+    beep(700, 180);
+  }
 });
 
 const formattedTimeInPhase = computed(() => formatTime(state.value.timeInPhase * 1000));
