@@ -10,6 +10,7 @@ I thought that I could do better than that.
 
 - Multi-Team timer with individual offsets, work-time, rest-time and round count
 - Beep-Cues or Voice Cues per team
+- Optional 5‑second warning beep in work phases
 - Global color-coded phase overview with scrubber
 - Synchronisation with read-only instances (for showing on multiple devices)
 - Remote control

@@ -15,6 +15,7 @@ export type TimerSettings = {
   rounds: number;   // work / rest cycles
   voice?: VoiceKey;
   color?: string;
+  warningBeep?: boolean; // beep 5s before work ends
 };
 
 const settings = defineModel<TimerSettings>('settings', {
@@ -88,6 +89,14 @@ watch(state, async (n, o) => {
 watch(() => state.value.remainingSeconds, sec => {
   if (state.value.state === 'off' && [3, 2, 1].includes(sec)) {
     cue(String(sec) as CueKey);
+  }
+  if (
+    state.value.state === 'on' &&
+    sec === 5 &&
+    globalTimeTicking.value &&
+    settings.value.warningBeep
+  ) {
+    beep(700, 180);
   }
 });
 
@@ -164,6 +173,14 @@ const showSettings = ref(false);
               </template>
               <template #unchecked>
                 Beep
+              </template>
+            </n-switch>
+            <n-switch v-model:value="settings.warningBeep">
+              <template #checked>
+                5s Beep
+              </template>
+              <template #unchecked>
+                No 5s
               </template>
             </n-switch>
           </div>
