@@ -536,7 +536,7 @@ export function createRealtimeClient(opts: RtcOptions = {}) {
     }
 
     async function requestTimeSync() {
-        if (offlineMode.value || !channel.value || clientMode.value !== 'followtimer' || !currentLead.value) {
+        if (offlineMode.value || !channel.value || !currentLead.value) {
             return;
         }
         const id = createUUID();

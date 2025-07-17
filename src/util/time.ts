@@ -165,7 +165,7 @@ function initGlobalTime(rtc: Rtc) {
   });
 
   watch([mode, rtc.lead], ([m, lead]) => {
-    if (m === 'followtimer' && lead) {
+    if ((m === 'followtimer' || m === 'remote') && lead) {
       requestTimeSync?.();
     }
   }, { immediate: true });
