@@ -64,7 +64,7 @@ export const presetColors = ["#FF6B6B", "#4ECDC4", "#556270", "#C7F464", "#FF6F6
 
 function initGlobalTime(rtc: Rtc) {
   /* ─────────────── 0a. Realtime shortcuts ─────────────── */
-  const { publishSync, takeover, emitter, mode } = rtc;
+  const { publishSync, takeover, emitter, mode, clockOffset, requestTimeSync } = rtc;
   const isLead = computed(() => mode.value === 'leadtimer');
 
   /* ─────────────── 1. Persistent timer configuration ─────────────── */
@@ -164,6 +164,12 @@ function initGlobalTime(rtc: Rtc) {
     trailing: true,
   });
 
+  watch([mode, rtc.lead], ([m, lead]) => {
+    if ((m === 'followtimer' || m === 'remote') && lead) {
+      requestTimeSync?.();
+    }
+  }, { immediate: true });
+
   const unWatchEmitter = watch(emitter, (newEmitter) => {
     if (!newEmitter) return;
     /* ─────────────── 3. React to incoming realtime traffic ─────────────── */
@@ -186,9 +192,10 @@ function initGlobalTime(rtc: Rtc) {
          * follower starts closer to the leader's current time.
          */
         const receivedAt = Date.now();
+        const leadNow = receivedAt + (clockOffset?.value ?? 0);
         // Clamp the age to 0 because our clock might be behind the leader's
         // clock, which would otherwise yield a negative latency.
-        const msgAge = Math.max(0, receivedAt - msg.timestamp);
+        const msgAge = Math.max(0, leadNow - msg.timestamp);
         lastSnapshot.value = {
           timestamp: receivedAt,
           time: msg.state.time + msgAge,
@@ -223,6 +230,8 @@ function initGlobalTime(rtc: Rtc) {
             time: now.value,
           },
         })
+      } else if (!isLead.value && msg.mode === 'leadtimer' && msg.action !== 'leave') {
+        requestTimeSync?.();
       }
     });
 

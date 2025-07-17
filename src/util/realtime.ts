@@ -2,6 +2,7 @@ import Ably, {
     type ConnectionStateChange,
     type PresenceMessage,
     type RealtimeChannel,
+    type Message,
 } from 'ably';
 import {
     ref,
@@ -47,6 +48,22 @@ export interface RemoteSignalMsg {
     signal: 'resume' | 'pause' | 'reset';
 }
 
+export interface TimeSyncReqMsg {
+    type: 'timesync-req';
+    id: string;
+    t1: number;
+    origin: string;
+}
+
+export interface TimeSyncResMsg {
+    type: 'timesync-resp';
+    id: string;
+    t1: number;
+    t2: number;
+    t3: number;
+    target: string;
+}
+
 /* ------------------------------------------------------------------------- *
  * Helper utilities
  * ------------------------------------------------------------------------- */
@@ -75,6 +92,7 @@ type Events = {
     sync: SyncMsg;
     presence: PresenceMsg;
     remoteSignal: RemoteSignalMsg;
+    timesync: number;
 };
 
 export function createRealtimeClient(opts: RtcOptions = {}) {
@@ -112,6 +130,9 @@ export function createRealtimeClient(opts: RtcOptions = {}) {
     );
 
     const currentLead = ref<string | null>(null);
+
+    const clockOffset = ref(0);
+    const roundTripDelay = ref(0);
 
     // Computed helper – leader present?
     const leaderPresent = computed(() => currentLead.value !== null);
@@ -237,14 +258,43 @@ export function createRealtimeClient(opts: RtcOptions = {}) {
         /* ---------------- sync messages ---------------- */
         ch.subscribe('message', (msg) => {
             if (msg.clientId === clientId.value) return; // ignore own messages
-            if (msg.data.signal) {
+            const data = msg.data as any;
+            if (data.signal) {
                 // Remote signal message
-                const remoteSignal: RemoteSignalMsg = msg.data as RemoteSignalMsg;
+                const remoteSignal: RemoteSignalMsg = data as RemoteSignalMsg;
                 emitter.emit('remoteSignal', remoteSignal);
                 return;
-            } else {
-                emitter.emit('sync', msg.data as SyncMsg);
             }
+
+            if (data.type === 'timesync-req' && clientMode.value === 'leadtimer') {
+                const req = data as TimeSyncReqMsg;
+                const t2 = Date.now();
+                const resp: TimeSyncResMsg = {
+                    type: 'timesync-resp',
+                    id: req.id,
+                    t1: req.t1,
+                    t2,
+                    t3: Date.now(),
+                    target: req.origin,
+                };
+                ch.publish('message', resp).catch((e) => log(debug, 'publish error', e));
+                return;
+            }
+
+            if (data.type === 'timesync-resp') {
+                const resp = data as TimeSyncResMsg;
+                if (resp.target === clientId.value) {
+                    const t4 = Date.now();
+                    const offset = ((resp.t2 - resp.t1) + (resp.t3 - t4)) / 2;
+                    const delay = (t4 - resp.t1) - (resp.t3 - resp.t2);
+                    clockOffset.value = offset;
+                    roundTripDelay.value = delay;
+                    emitter.emit('timesync', offset);
+                }
+                return;
+            }
+
+            emitter.emit('sync', data as SyncMsg);
         });
 
         /* ---------------- presence messages ------------ */
@@ -485,6 +535,34 @@ export function createRealtimeClient(opts: RtcOptions = {}) {
         channel.value.publish('message', msg).catch((e) => log(debug, 'publish error', e));
     }
 
+    async function requestTimeSync() {
+        if (offlineMode.value || !channel.value || !currentLead.value) {
+            return;
+        }
+        const id = createUUID();
+        const t1 = Date.now();
+        const req: TimeSyncReqMsg = { type: 'timesync-req', id, t1, origin: clientId.value };
+
+        const handler = (msg: Message) => {
+            const data = msg.data as any;
+            if (data.type === 'timesync-resp' && data.id === id && data.target === clientId.value) {
+                const t4 = Date.now();
+                const { t1, t2, t3 } = data as TimeSyncResMsg;
+                const offset = ((t2 - t1) + (t3 - t4)) / 2;
+                const delay = (t4 - t1) - (t3 - t2);
+                clockOffset.value = offset;
+                roundTripDelay.value = delay;
+                emitter.emit('timesync', offset);
+                channel.value?.unsubscribe('message', handler);
+            }
+        };
+        channel.value.subscribe('message', handler);
+        await channel.value.publish('message', req);
+
+        // timeout cleanup
+        setTimeout(() => channel.value?.unsubscribe('message', handler), 5000);
+    }
+
     /* --------------------------------------------------------------------- */
     // 6.  Dispose / clean‑up
     /* --------------------------------------------------------------------- */
@@ -539,11 +617,14 @@ export function createRealtimeClient(opts: RtcOptions = {}) {
         aloneInSession,
         peers,
         fetchingToken,
+        clockOffset,
+        roundTripDelay,
 
         // methods
         publishSync,
         takeover,
         publishRemoteSignal,
+        requestTimeSync,
         emitter,
         dispose,
     } as const;
@@ -602,6 +683,8 @@ export function useRealtime(opts: UseRealtimeOpts = {}) {
         },
     });
     const fetchingToken = computed(() => instance.value?.fetchingToken.value ?? false);
+    const clockOffset = computed(() => instance.value?.clockOffset.value ?? 0);
+    const roundTripDelay = computed(() => instance.value?.roundTripDelay.value ?? 0);
 
     return {
         offlineMode,
@@ -615,11 +698,14 @@ export function useRealtime(opts: UseRealtimeOpts = {}) {
         negotiating,
         aloneInSession,
         fetchingToken,
+        clockOffset,
+        roundTripDelay,
 
         // methods
         publishSync,
         publishRemoteSignal,
         takeover,
+        requestTimeSync: () => instance.value?.requestTimeSync(),
         emitter
     } as const;
 }
